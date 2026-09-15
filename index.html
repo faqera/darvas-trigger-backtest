@@ -7,7 +7,7 @@
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #080f1a; -webkit-tap-highlight-color: transparent; }
-  input, textarea, button { font-family: inherit; }
+  input, textarea, button, select { font-family: inherit; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; display: inline-block; }
 </style>
@@ -25,7 +25,14 @@ const IGNORE_PCT = 0.0275;
 const QTY_HIGH = 1;
 const QTY_LOW = 2;
 const QTY_THRESHOLD = 3000;
-const YAHOO_RANGE = "1y";   // आज से 1 साल पीछे तक
+const DEFAULT_RANGE = "1y";   // आज से 1 साल पीछे तक
+
+// Trigger source options
+const TRIGGER_SOURCES = [
+  { key:"1w", label:"1W High (Adani)" },
+  { key:"2w", label:"2W High" },
+  { key:"4w", label:"4W High (Monthly)" },
+];
 
 // ---------- Stocks List ----------
 const STOCKS_DB = [
@@ -133,7 +140,7 @@ const fmtN = (v,d=2) => (v==null||isNaN(v)) ? "—" : Number(v).toFixed(d);
 const inr = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
 
 // ---------- Yahoo Finance Auto Fetch ----------
-async function fetchYahooOHLC(symbol, range=YAHOO_RANGE, interval="1d") {
+async function fetchYahooOHLC(symbol, range=DEFAULT_RANGE, interval="1d") {
   const ySym = symbol.toUpperCase() + ".NS";
   const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?range=${range}&interval=${interval}`;
   const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`;
@@ -197,7 +204,9 @@ function isoWeekKey(d) {
   return t.getFullYear()+"-W"+String(wk).padStart(2,"0");
 }
 
-function calcWeekly(rows) {
+// ---------- Weekly Trigger Backtest ----------
+// sourceKey: "1w" | "2w" | "4w"
+function calcWeekly(rows, sourceKey="1w") {
   const enriched = rows.map(r => ({ ...r, wk: isoWeekKey(r.date), events: [] }));
   const wkHigh = {}, wkLow = {};
   enriched.forEach(r => {
@@ -205,17 +214,32 @@ function calcWeekly(rows) {
     if (wkLow [r.wk]==null || r.low <wkLow [r.wk]) wkLow [r.wk]=r.low;
   });
   const wks = [...new Set(enriched.map(r=>r.wk))];
+
+  // Lookback = 1 / 2 / 4 weeks
+  const lookback = sourceKey === "2w" ? 2 : sourceKey === "4w" ? 4 : 1;
+
+  // Trigger per week = highest high of previous N weeks
   const wkTrigger = {};
-  wks.forEach((w,i)=>{ wkTrigger[w] = i>0 ? wkHigh[wks[i-1]] : null; });
+  wks.forEach((w,i)=>{
+    if (i < lookback) { wkTrigger[w] = null; return; }
+    let mx = -Infinity;
+    for (let j = i-lookback; j < i; j++) {
+      if (wkHigh[wks[j]] > mx) mx = wkHigh[wks[j]];
+    }
+    wkTrigger[w] = mx === -Infinity ? null : mx;
+  });
+
   const rowsOut = enriched.map(r => ({ ...r, wkTrigger: wkTrigger[r.wk], buyPrice: null, position: null }));
   let state = "IDLE";
   let shares=0, cost=0, avg=0, target=0;
   let lastBuyTrig=null, entryDate=null, entryIdx=-1;
   const trades = [];
   let curWk=null, boughtThisWeek=false, ignoredThisWeek=false, soldThisWeek=false;
+
   for (let i=0;i<rowsOut.length;i++) {
     const r = rowsOut[i];
     const trig = wkTrigger[r.wk];
+
     if (r.wk !== curWk) {
       curWk = r.wk; boughtThisWeek=false; ignoredThisWeek=false; soldThisWeek=false;
       if (state==="IN_POSITION" && lastBuyTrig!=null && trig!=null) {
@@ -224,6 +248,8 @@ function calcWeekly(rows) {
       }
     }
     if (trig == null) continue;
+
+    // Target hit check
     if (state==="IN_POSITION" && r.high >= target - 0.0001) {
       const exitPrice = target;
       const pnl = shares*exitPrice - cost;
@@ -233,6 +259,8 @@ function calcWeekly(rows) {
       lastBuyTrig=null; entryDate=null; entryIdx=-1; soldThisWeek = true;
       continue;
     }
+
+    // Buy trigger
     if (!boughtThisWeek && !ignoredThisWeek && !soldThisWeek && r.low<=trig && trig<=r.high) {
       const qty = trig >= QTY_THRESHOLD ? QTY_HIGH : QTY_LOW;
       shares += qty; cost += qty*trig; avg = cost/shares; target = avg*(1+TARGET_PCT);
@@ -240,6 +268,7 @@ function calcWeekly(rows) {
       state = "IN_POSITION"; lastBuyTrig = trig; boughtThisWeek = true;
       r.events.push("buy"); r.buyPrice = trig;
       r.position = { avg, target, shares };
+      // Same-day target
       if (r.high >= target - 0.0001) {
         const exitPrice = target;
         const pnl = shares*exitPrice - cost;
@@ -250,11 +279,13 @@ function calcWeekly(rows) {
       }
     }
   }
+
   let openPosition = null;
   if (state==="IN_POSITION") {
     const last = rowsOut[rowsOut.length-1];
     openPosition = { shares, avg, target, lastBuyTrig, entryDate, mark: last.close, unrealized: shares*last.close - cost };
   }
+
   const lastWk = wks[wks.length-1];
   const pendingTrigger = wkHigh[lastWk];
   return { rows: rowsOut, trades, openPosition, pendingTrigger };
@@ -357,7 +388,7 @@ const SAMPLE_CSV = `Date,Open,High,Low,Close
 28-Sep-23,2489.95,2511,2446.7,2475.25
 29-Sep-23,2462.05,2479.55,2405.05,2413.9`;
 
-function MiniChart({ rows, height=300 }) {
+function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   const [hover, setHover] = useState(null);
   const W=800, H=height, PAD={l:54,r:10,t:20,b:30};
   const iw=W-PAD.l-PAD.r, ih=H-PAD.t-PAD.b;
@@ -407,7 +438,7 @@ function MiniChart({ rows, height=300 }) {
         <div style={{background:"#0f1e33",border:"1px solid #2a3f5f",borderRadius:8,padding:"8px 12px",fontSize:11,lineHeight:1.7,fontFamily:"monospace",margin:"4px 10px"}}>
           <div style={{fontWeight:700,color:"#a0bde0"}}>{fmtD(hover.date)}</div>
           <div style={{color:"#60a5fa"}}>Close: ₹{fmtN(hover.close)}</div>
-          {hover.wkTrigger && <div style={{color:"#fbbf24"}}>Trigger: ₹{fmtN(hover.wkTrigger)}</div>}
+          {hover.wkTrigger && <div style={{color:"#fbbf24"}}>Trigger ({sourceLabel}): ₹{fmtN(hover.wkTrigger)}</div>}
           {hover.events?.includes("ignore") && <div style={{color:"#64748b",fontWeight:700}}>⚠ IGNORED</div>}
           {hover.events?.includes("buy") && <div style={{color:"#4ade80",fontWeight:700}}>✅ BUY @ ₹{fmtN(hover.buyPrice)}</div>}
           {hover.position && !hover.events?.includes("target") && <div style={{color:"#93c5fd"}}>🎯 Target ₹{fmtN(hover.position.target)}</div>}
@@ -416,7 +447,7 @@ function MiniChart({ rows, height=300 }) {
       )}
       <div style={{padding:"4px 14px",fontSize:11,color:"#64748b"}}>
         <span style={{color:"#60a5fa"}}>━ Close</span> &nbsp;
-        <span style={{color:"#fbbf24"}}>┄ Weekly Trigger</span> &nbsp;
+        <span style={{color:"#fbbf24"}}>┄ {sourceLabel} Trigger</span> &nbsp;
         <span style={{color:"#4ade80"}}>● Buy</span> &nbsp;
         <span style={{color:"#a855f7"}}>● Target</span>
       </div>
@@ -424,7 +455,7 @@ function MiniChart({ rows, height=300 }) {
   );
 }
 
-// ---------- Stocks List Modal with Auto Fetch ----------
+// ---------- Stocks List Modal ----------
 function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
@@ -528,21 +559,34 @@ function App() {
   const [loadingSym, setLoadingSym] = useState(null);
   const [autoProgress, setAutoProgress] = useState(null);
   const [toast, setToast] = useState(null);
+  const [triggerSource, setTriggerSource] = useState("1w");
+  const [range, setRange] = useState(DEFAULT_RANGE);
 
   function showToast(msg, type="info") {
     setToast({msg, type});
     setTimeout(()=>setToast(null), 3000);
   }
 
-  // Add stock by fetching Yahoo
+  // Trigger source बदलने पर सारे loaded stocks recompute
+  function changeTriggerSource(newSource) {
+    setTriggerSource(newSource);
+    setStocks(prev => prev.map(s => {
+      if (!s.rawRows) return s;
+      const res = calcWeekly(s.rawRows, newSource);
+      return { name: s.name, rawRows: s.rawRows, ...res };
+    }));
+    const lbl = TRIGGER_SOURCES.find(t=>t.key===newSource)?.label || newSource;
+    showToast(`✅ Trigger बदला: ${lbl}`, "success");
+  }
+
   async function addStockAuto(stock) {
     setLoadingSym(stock.sym);
     try {
-      const rows = await fetchYahooOHLC(stock.sym);
-      const res = calcWeekly(rows);
+      const rows = await fetchYahooOHLC(stock.sym, range);
+      const res = calcWeekly(rows, triggerSource);
       setStocks(p => {
         const exists = p.findIndex(x => x.name === "NSE:"+stock.sym);
-        const newStock = { name: "NSE:"+stock.sym, ...res };
+        const newStock = { name: "NSE:"+stock.sym, rawRows: rows, ...res };
         if (exists >= 0) {
           const copy = [...p]; copy[exists] = newStock; return copy;
         }
@@ -564,9 +608,7 @@ function App() {
 
   async function pickFromList(stock) {
     const ok = await addStockAuto(stock);
-    if (ok) {
-      setListOpen(false);
-    }
+    if (ok) setListOpen(false);
   }
 
   async function autoLoadAll() {
@@ -577,13 +619,10 @@ function App() {
       const st = suitable[i];
       setAutoProgress({ done: i, total: suitable.length, current: st.sym });
       try {
-        const rows = await fetchYahooOHLC(st.sym);
-        const res = calcWeekly(rows);
-        newStocks.push({ name: "NSE:"+st.sym, ...res });
-      } catch (e) {
-        // skip failures
-      }
-      // small delay to avoid rate limiting
+        const rows = await fetchYahooOHLC(st.sym, range);
+        const res = calcWeekly(rows, triggerSource);
+        newStocks.push({ name: "NSE:"+st.sym, rawRows: rows, ...res });
+      } catch (e) {}
       await new Promise(r => setTimeout(r, 200));
     }
     setStocks(prev => {
@@ -605,9 +644,9 @@ function App() {
     setErr("");
     const parsed = parseCSV(csvRaw);
     if (parsed.error) { setErr(parsed.error); return false; }
-    const res = calcWeekly(parsed.rows);
+    const res = calcWeekly(parsed.rows, triggerSource);
     const name = lbl?.trim() || parsed.stockName || `Stock ${stocks.length+1}`;
-    setStocks(p => [...p, { name, ...res }]);
+    setStocks(p => [...p, { name, rawRows: parsed.rows, ...res }]);
     setActive(stocks.length);
     return true;
   }
@@ -647,17 +686,33 @@ function App() {
   const events = s ? s.rows.filter(r => r.events?.length) : [];
   const totalPnL = s ? s.trades.reduce((a,t)=>a+t.pnl,0) : 0;
   const wins = s ? s.trades.filter(t=>t.pnl>0).length : 0;
+  const sourceLabel = TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label.split(" ")[0] || "1W";
 
   return (
     <div style={{ fontFamily:"'Inter',system-ui,sans-serif", background:C.bg, color:C.text, minHeight:"100vh", fontSize:14 }}>
-      <div style={{ background:C.card, padding:"12px 16px", display:"flex", alignItems:"center", gap:10, borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ flex:1 }}>
+      <div style={{ background:C.card, padding:"12px 16px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
+        <div style={{ flex:1, minWidth:150 }}>
           <span style={{ fontWeight:700, fontSize:16 }}>📈 Weekly Trigger Backtest</span>
-          <span style={{ fontSize:11, color:C.muted, marginLeft:10 }}>Auto-Fetch · 6% · ±2.75%</span>
+          <span style={{ fontSize:11, color:C.muted, marginLeft:8 }}>Auto</span>
         </div>
+        <select value={triggerSource} onChange={e=>changeTriggerSource(e.target.value)}
+          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
+          {TRIGGER_SOURCES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <select value={range} onChange={e=>setRange(e.target.value)}
+          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
+          <option value="6mo">6 Months</option>
+          <option value="1y">1 Year</option>
+          <option value="2y">2 Years</option>
+          <option value="5y">5 Years</option>
+        </select>
         <button onClick={()=>setListOpen(true)}
-          style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 12px", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
           📋 Stocks
+        </button>
+        <button onClick={()=>setModal(true)}
+          style={{ background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          + CSV
         </button>
       </div>
 
@@ -707,14 +762,11 @@ function App() {
             <div style={{ fontSize:12, color:C.muted, lineHeight:1.9 }}>
               <b style={{color:C.text}}>कैसे काम करता है:</b><br/>
               1️⃣ <b style={{color:"#93c5fd"}}>Stocks List</b> से कोई भी stock चुनें<br/>
-              2️⃣ Yahoo Finance से <b style={{color:"#60a5fa"}}>2 साल का data</b> auto-fetch<br/>
-              3️⃣ Weekly Trigger strategy auto-apply<br/>
+              2️⃣ Yahoo Finance से <b style={{color:"#60a5fa"}}>1 साल का data</b> auto-fetch<br/>
+              3️⃣ <b style={{color:C.gtt}}>Trigger dropdown</b>: 1W / 2W / 4W High चुनें<br/>
               4️⃣ Chart, trades, P&L सब अपने आप तैयार<br/>
               <span style={{color:C.gtt}}>💡 "Load All Suitable" दबाएँ — 55 stocks एक साथ!</span>
             </div>
-          </div>
-          <div style={{fontSize:11,color:C.muted,maxWidth:400}}>
-            ⚠️ Data Yahoo Finance से आता है — internet connection ज़रूरी है। पहली बार लोड होने में 1-2 सेकंड लगते हैं प्रति stock।
           </div>
         </div>
       )}
@@ -738,6 +790,9 @@ function App() {
           </div>
           <div style={{ margin:"0 16px 12px", ...card(), padding:"10px 16px", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
             <span style={{ fontSize:11, color:C.muted }}>Status ({fmtD(last?.date)}):</span>
+            <span style={{background:"#0a1628",color:"#fbbf24",border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
+              🎯 {sourceLabel} Trigger
+            </span>
             {s.openPosition ? (
               <span style={{ background:"#04130b", color:C.buy, border:"1px solid #166534", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
                 📈 HOLDING {s.openPosition.shares} @ ₹{fmtN(s.openPosition.avg)} — Target ₹{fmtN(s.openPosition.target)}
@@ -767,8 +822,8 @@ function App() {
           {view==="chart" && (
             <div style={{ padding:"0 10px 20px" }}>
               <div style={{ ...card(), padding:"10px 0" }}>
-                <div style={{ paddingLeft:14, fontSize:12, color:C.muted, marginBottom:6 }}>{s.name} — Close + Weekly Trigger</div>
-                <MiniChart rows={s.rows}/>
+                <div style={{ paddingLeft:14, fontSize:12, color:C.muted, marginBottom:6 }}>{s.name} — Close + {sourceLabel} Trigger</div>
+                <MiniChart rows={s.rows} sourceLabel={sourceLabel}/>
               </div>
             </div>
           )}
@@ -882,6 +937,34 @@ function App() {
       )}
 
       {listOpen && <StocksListModal onClose={()=>setListOpen(false)} onPick={pickFromList} loadingSym={loadingSym} autoLoadAll={autoLoadAll} autoProgress={autoProgress} />}
+
+      {modal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.8)", display:"flex", alignItems:"flex-end", zIndex:100 }}
+          onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""), setStockSearch(""), setShowPicker(false))}>
+          <div style={{ background:"#0d1a2a", borderTop:`1px solid ${C.border}`, borderRadius:"18px 18px 0 0", padding:20, width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
+            <div style={{ fontWeight:700, fontSize:16, marginBottom:18 }}>📥 CSV Upload (Optional)</div>
+            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>Stock का नाम</label>
+            <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="जैसे: NSE:RELIANCE"
+              style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:14, boxSizing:"border-box", marginBottom:14, outline:"none" }}/>
+            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>CSV File Upload</label>
+            <input type="file" accept=".csv,.txt" onChange={onFile}
+              style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:13, boxSizing:"border-box", marginBottom:10 }}/>
+            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>या CSV Paste करें</label>
+            <textarea value={csvTxt} onChange={e=>setCsvTxt(e.target.value)} rows={9}
+              placeholder={"Date,Open,High,Low,Close\n3-Oct-22,3440,3460.05,3110.2,3157.3"}
+              style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:11, fontFamily:"monospace", resize:"vertical", boxSizing:"border-box", marginBottom:10, outline:"none" }}/>
+            {err && (
+              <div style={{ color:"#f87171", background:"rgba(239,68,68,.1)", border:"1px solid rgba(239,68,68,.3)", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>❌ {err}</div>
+            )}
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>{ setModal(false); setErr(""); }}
+                style={{ flex:1, background:C.border, color:C.text, border:"none", borderRadius:10, padding:12, fontSize:14, cursor:"pointer" }}>Cancel</button>
+              <button onClick={submitAdd}
+                style={{ flex:2, background:C.accent, color:"#fff", border:"none", borderRadius:10, padding:12, fontSize:14, fontWeight:700, cursor:"pointer" }}>✅ Backtest चलाओ</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div style={{
