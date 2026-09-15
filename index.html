@@ -10,6 +10,7 @@
   input, textarea, button, select { font-family: inherit; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; display: inline-block; }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
 </style>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -25,9 +26,8 @@ const IGNORE_PCT = 0.0275;
 const QTY_HIGH = 1;
 const QTY_LOW = 2;
 const QTY_THRESHOLD = 3000;
-const DEFAULT_RANGE = "1y";   // आज से 1 साल पीछे तक
+const DEFAULT_RANGE = "1y";
 
-// Trigger source options
 const TRIGGER_SOURCES = [
   { key:"1w", label:"1W High (Adani)" },
   { key:"2w", label:"2W High" },
@@ -136,6 +136,14 @@ const STOCKS_DB = [
 ];
 
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
+const fmtDISO = d => {
+  if (!d) return "";
+  const dt = new Date(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth()+1).padStart(2,"0");
+  const day = String(dt.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+};
 const fmtN = (v,d=2) => (v==null||isNaN(v)) ? "—" : Number(v).toFixed(d);
 const inr = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
 
@@ -161,6 +169,18 @@ async function fetchYahooOHLC(symbol, range=DEFAULT_RANGE, interval="1d") {
   rows.sort((a,b)=>a.ts-b.ts);
   if (rows.length < 10) throw new Error("कम data मिला ("+rows.length+" rows)");
   return rows;
+}
+
+// ---------- Date Range Filter ----------
+function filterRowsByDate(rows, fromStr, toStr) {
+  if (!fromStr && !toStr) return rows;
+  const from = fromStr ? new Date(fromStr + "T00:00:00") : null;
+  const to = toStr ? new Date(toStr + "T23:59:59") : null;
+  return rows.filter(r => {
+    if (from && r.date < from) return false;
+    if (to && r.date > to) return false;
+    return true;
+  });
 }
 
 function parseCSV(raw) {
@@ -204,8 +224,6 @@ function isoWeekKey(d) {
   return t.getFullYear()+"-W"+String(wk).padStart(2,"0");
 }
 
-// ---------- Weekly Trigger Backtest ----------
-// sourceKey: "1w" | "2w" | "4w"
 function calcWeekly(rows, sourceKey="1w") {
   const enriched = rows.map(r => ({ ...r, wk: isoWeekKey(r.date), events: [] }));
   const wkHigh = {}, wkLow = {};
@@ -214,11 +232,7 @@ function calcWeekly(rows, sourceKey="1w") {
     if (wkLow [r.wk]==null || r.low <wkLow [r.wk]) wkLow [r.wk]=r.low;
   });
   const wks = [...new Set(enriched.map(r=>r.wk))];
-
-  // Lookback = 1 / 2 / 4 weeks
   const lookback = sourceKey === "2w" ? 2 : sourceKey === "4w" ? 4 : 1;
-
-  // Trigger per week = highest high of previous N weeks
   const wkTrigger = {};
   wks.forEach((w,i)=>{
     if (i < lookback) { wkTrigger[w] = null; return; }
@@ -228,18 +242,15 @@ function calcWeekly(rows, sourceKey="1w") {
     }
     wkTrigger[w] = mx === -Infinity ? null : mx;
   });
-
   const rowsOut = enriched.map(r => ({ ...r, wkTrigger: wkTrigger[r.wk], buyPrice: null, position: null }));
   let state = "IDLE";
   let shares=0, cost=0, avg=0, target=0;
   let lastBuyTrig=null, entryDate=null, entryIdx=-1;
   const trades = [];
   let curWk=null, boughtThisWeek=false, ignoredThisWeek=false, soldThisWeek=false;
-
   for (let i=0;i<rowsOut.length;i++) {
     const r = rowsOut[i];
     const trig = wkTrigger[r.wk];
-
     if (r.wk !== curWk) {
       curWk = r.wk; boughtThisWeek=false; ignoredThisWeek=false; soldThisWeek=false;
       if (state==="IN_POSITION" && lastBuyTrig!=null && trig!=null) {
@@ -248,8 +259,6 @@ function calcWeekly(rows, sourceKey="1w") {
       }
     }
     if (trig == null) continue;
-
-    // Target hit check
     if (state==="IN_POSITION" && r.high >= target - 0.0001) {
       const exitPrice = target;
       const pnl = shares*exitPrice - cost;
@@ -259,8 +268,6 @@ function calcWeekly(rows, sourceKey="1w") {
       lastBuyTrig=null; entryDate=null; entryIdx=-1; soldThisWeek = true;
       continue;
     }
-
-    // Buy trigger
     if (!boughtThisWeek && !ignoredThisWeek && !soldThisWeek && r.low<=trig && trig<=r.high) {
       const qty = trig >= QTY_THRESHOLD ? QTY_HIGH : QTY_LOW;
       shares += qty; cost += qty*trig; avg = cost/shares; target = avg*(1+TARGET_PCT);
@@ -268,7 +275,6 @@ function calcWeekly(rows, sourceKey="1w") {
       state = "IN_POSITION"; lastBuyTrig = trig; boughtThisWeek = true;
       r.events.push("buy"); r.buyPrice = trig;
       r.position = { avg, target, shares };
-      // Same-day target
       if (r.high >= target - 0.0001) {
         const exitPrice = target;
         const pnl = shares*exitPrice - cost;
@@ -279,114 +285,15 @@ function calcWeekly(rows, sourceKey="1w") {
       }
     }
   }
-
   let openPosition = null;
   if (state==="IN_POSITION") {
     const last = rowsOut[rowsOut.length-1];
     openPosition = { shares, avg, target, lastBuyTrig, entryDate, mark: last.close, unrealized: shares*last.close - cost };
   }
-
   const lastWk = wks[wks.length-1];
   const pendingTrigger = wkHigh[lastWk];
   return { rows: rowsOut, trades, openPosition, pendingTrigger };
 }
-
-const SAMPLE_CSV = `Date,Open,High,Low,Close
-3-Oct-22,3440,3460.05,3110.2,3157.3
-4-Oct-22,3230,3291.2,3125,3237.7
-6-Oct-22,3270,3318.8,3208.05,3285
-7-Oct-22,3280,3310.95,3228.15,3277.6
-10-Oct-22,3234,3278.75,3214.35,3246.25
-11-Oct-22,3257.55,3338,3249,3273.95
-12-Oct-22,3297,3297,3145,3223.65
-13-Oct-22,3218,3262.8,3189,3233.65
-14-Oct-22,3272,3305,3194.85,3209.5
-17-Oct-22,3211,3235,3136.1,3212.6
-18-Oct-22,3249,3298,3226.1,3284.3
-19-Oct-22,3300,3310,3259.65,3277.25
-20-Oct-22,3260,3365,3245,3357.1
-21-Oct-22,3374.9,3382,3287,3311.9
-24-Oct-22,3325,3340.1,3287.4,3309.8
-25-Oct-22,3321.95,3345,3294,3300.5
-27-Oct-22,3319.85,3355,3297,3325
-28-Oct-22,3322,3387.95,3297.65,3323.3
-31-Oct-22,3339.95,3360,3326.1,3347.45
-1-Nov-22,3361.9,3607.45,3352,3575.7
-2-Nov-22,3580,3625.15,3526,3580.7
-3-Nov-22,3550,3614.7,3542.45,3590.4
-4-Nov-22,3642,3849.8,3566.75,3833.25
-7-Nov-22,3852.45,4013.7,3820,3960.6
-9-Nov-22,3977,4048,3943.05,3997.2
-10-Nov-22,3995,4030,3962.15,3992.25
-11-Nov-22,4040,4048.95,3975.15,4008.85
-14-Nov-22,3999,4078,3990,4022.55
-15-Nov-22,4025.05,4065,4022,4057.8
-16-Nov-22,4057.3,4096,3863.55,3956.6
-17-Nov-22,3970,4033,3900,4018.15
-18-Nov-22,4028.35,4043,3984,4019.8
-19-Dec-22,3988,4104,3971.45,4075.3
-20-Dec-22,4095,4172,4066.4,4165.3
-21-Dec-22,4175,4190,3883.25,3901.95
-22-Dec-22,3948,3948,3817.05,3868.55
-23-Dec-22,3822,3848,3616.8,3642.2
-26-Dec-22,3653,3744.9,3620,3716.75
-27-Dec-22,3732.45,3797.9,3695.05,3769.65
-28-Dec-22,3756.05,3825,3745,3797.7
-29-Dec-22,3790,3825,3748.1,3810.6
-30-Dec-22,3829.7,3898,3822.05,3858.35
-9-Jan-23,3843,3880,3811.25,3855.3
-10-Jan-23,3859,3862.05,3555,3646.9
-11-Jan-23,3660,3664.5,3560.1,3635.8
-12-Jan-23,3642.5,3679,3612,3647.2
-13-Jan-23,3651.2,3736.05,3642.2,3721.15
-16-Jan-23,3720,3739.95,3600,3619.8
-17-Jan-23,3620,3649.6,3560.2,3639.35
-18-Jan-23,3648,3648,3527.1,3596.7
-19-Jan-23,3470,3537.7,3426.7,3463.55
-20-Jan-23,3450,3477.35,3440.95,3456.15
-30-Jan-23,2850,3037.55,2665,2892.85
-31-Jan-23,2980,3073.6,2906,2973.9
-1-Feb-23,2995,3010.75,1941.2,2135.35
-2-Feb-23,2348.85,2348.85,1494.75,1565.25
-3-Feb-23,1490,1679.9,1017.45,1586.8
-6-Feb-23,1575,1615,1435.2,1572.7
-7-Feb-23,1571,1962.7,1525.6,1802.95
-8-Feb-23,1869.85,2222.15,1840.85,2164.25
-9-Feb-23,2168,2168,1731.4,1925.7
-10-Feb-23,1769,1990,1733.15,1846.95
-1-Mar-23,1424,1580,1411,1564.3
-2-Mar-23,1499.9,1646,1407.9,1607.25
-3-Mar-23,1688.85,1905.95,1685.5,1879.5
-6-Mar-23,1966.7,2135,1855,1982.9
-8-Mar-23,2040,2088,1941,2039.65
-9-Mar-23,2049.8,2068.85,1905.35,1953.15
-10-Mar-23,1870,1940,1820.6,1896.2
-22-May-23,2010,2347,1983.4,2326.1
-23-May-23,2410.9,2759.45,2400,2633.7
-24-May-23,2709,2750,2425.35,2475.6
-25-May-23,2440,2558.8,2386.65,2537.45
-26-May-23,2565,2599.95,2535.15,2544.35
-31-Jul-23,2477,2518,2467,2492.2
-1-Aug-23,2504.85,2514,2455.25,2481.1
-2-Aug-23,2493,2514,2451,2473.55
-3-Aug-23,2469.9,2550,2462,2532.6
-4-Aug-23,2545.3,2557.9,2502,2541.8
-18-Aug-23,2477.5,2665.95,2461.3,2577.4
-21-Aug-23,2588,2655,2580.5,2639.75
-22-Aug-23,2668.85,2721,2654.1,2698.05
-23-Aug-23,2720,2722.4,2488.85,2530.3
-24-Aug-23,2580,2613,2531.1,2539.55
-25-Aug-23,2549,2549,2486,2495.75
-11-Sep-23,2565,2630.25,2546,2614.95
-12-Sep-23,2622.45,2626.6,2530,2535.7
-13-Sep-23,2545.7,2566.95,2496,2518.9
-14-Sep-23,2541.85,2545,2506.05,2519.8
-15-Sep-23,2519.8,2558,2514.2,2540.05
-25-Sep-23,2479.95,2489,2424,2482.1
-26-Sep-23,2491,2499,2452.6,2457.95
-27-Sep-23,2460,2498,2445.1,2483.3
-28-Sep-23,2489.95,2511,2446.7,2475.25
-29-Sep-23,2462.05,2479.55,2405.05,2413.9`;
 
 function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   const [hover, setHover] = useState(null);
@@ -455,7 +362,6 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   );
 }
 
-// ---------- Stocks List Modal ----------
 function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
@@ -485,7 +391,6 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
           </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>×</button>
         </div>
-
         <button onClick={autoLoadAll} disabled={!!autoProgress}
           style={{
             background: autoProgress ? "#1e3352" : "linear-gradient(135deg,#2563eb,#7c3aed)",
@@ -497,7 +402,6 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
             ? `⏳ Loading ${autoProgress.done}/${autoProgress.total} — ${autoProgress.current}...`
             : `🚀 Load All Suitable (${sCount} stocks) — Auto`}
         </button>
-
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search: RELIANCE, INFY, HDFC..."
           style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",outline:"none",marginBottom:8}}/>
         <div style={{display:"flex",gap:6,marginBottom:10}}>
@@ -554,36 +458,61 @@ function App() {
   const [label, setLabel] = useState("");
   const [err, setErr] = useState("");
   const [view, setView] = useState("chart");
-  const [stockSearch, setStockSearch] = useState("");
-  const [showPicker, setShowPicker] = useState(false);
   const [loadingSym, setLoadingSym] = useState(null);
   const [autoProgress, setAutoProgress] = useState(null);
   const [toast, setToast] = useState(null);
   const [triggerSource, setTriggerSource] = useState("1w");
   const [range, setRange] = useState(DEFAULT_RANGE);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
 
   function showToast(msg, type="info") {
     setToast({msg, type});
     setTimeout(()=>setToast(null), 3000);
   }
 
-  // Trigger source बदलने पर सारे loaded stocks recompute
-  function changeTriggerSource(newSource) {
-    setTriggerSource(newSource);
+  // सारे loaded stocks recompute (trigger source या date range बदलने पर)
+  function recomputeAll(newSource, newFrom, newTo) {
     setStocks(prev => prev.map(s => {
       if (!s.rawRows) return s;
-      const res = calcWeekly(s.rawRows, newSource);
+      const filtered = filterRowsByDate(s.rawRows, newFrom, newTo);
+      if (filtered.length < 5) {
+        return { name: s.name, rawRows: s.rawRows, rows: [], trades: [], openPosition: null, pendingTrigger: null };
+      }
+      const res = calcWeekly(filtered, newSource);
       return { name: s.name, rawRows: s.rawRows, ...res };
     }));
+  }
+
+  function changeTriggerSource(newSource) {
+    setTriggerSource(newSource);
+    recomputeAll(newSource, dateFrom, dateTo);
     const lbl = TRIGGER_SOURCES.find(t=>t.key===newSource)?.label || newSource;
-    showToast(`✅ Trigger बदला: ${lbl}`, "success");
+    showToast(`✅ Trigger: ${lbl}`, "success");
+  }
+
+  function applyDateRange() {
+    recomputeAll(triggerSource, dateFrom, dateTo);
+    if (dateFrom || dateTo) {
+      showToast(`📅 Date range apply: ${dateFrom || "start"} → ${dateTo || "end"}`, "success");
+    } else {
+      showToast(`📅 Date filter हटाया`, "success");
+    }
+  }
+
+  function resetDateRange() {
+    setDateFrom(""); setDateTo("");
+    recomputeAll(triggerSource, "", "");
+    showToast(`📅 Date filter reset`, "success");
   }
 
   async function addStockAuto(stock) {
     setLoadingSym(stock.sym);
     try {
       const rows = await fetchYahooOHLC(stock.sym, range);
-      const res = calcWeekly(rows, triggerSource);
+      const filtered = filterRowsByDate(rows, dateFrom, dateTo);
+      const res = calcWeekly(filtered, triggerSource);
       setStocks(p => {
         const exists = p.findIndex(x => x.name === "NSE:"+stock.sym);
         const newStock = { name: "NSE:"+stock.sym, rawRows: rows, ...res };
@@ -596,7 +525,7 @@ function App() {
         const idx = stocks.findIndex(x => x.name === "NSE:"+stock.sym);
         return idx >= 0 ? idx : stocks.length;
       });
-      showToast(`✅ ${stock.sym} loaded (${rows.length} days)`, "success");
+      showToast(`✅ ${stock.sym} loaded (${filtered.length} days)`, "success");
       setLoadingSym(null);
       return true;
     } catch (e) {
@@ -620,7 +549,8 @@ function App() {
       setAutoProgress({ done: i, total: suitable.length, current: st.sym });
       try {
         const rows = await fetchYahooOHLC(st.sym, range);
-        const res = calcWeekly(rows, triggerSource);
+        const filtered = filterRowsByDate(rows, dateFrom, dateTo);
+        const res = calcWeekly(filtered, triggerSource);
         newStocks.push({ name: "NSE:"+st.sym, rawRows: rows, ...res });
       } catch (e) {}
       await new Promise(r => setTimeout(r, 200));
@@ -635,7 +565,7 @@ function App() {
       return merged;
     });
     setAutoProgress(null);
-    showToast(`🚀 ${newStocks.length} stocks loaded automatically`, "success");
+    showToast(`🚀 ${newStocks.length} stocks loaded`, "success");
     setListOpen(false);
     setActive(0);
   }
@@ -644,7 +574,8 @@ function App() {
     setErr("");
     const parsed = parseCSV(csvRaw);
     if (parsed.error) { setErr(parsed.error); return false; }
-    const res = calcWeekly(parsed.rows, triggerSource);
+    const filtered = filterRowsByDate(parsed.rows, dateFrom, dateTo);
+    const res = calcWeekly(filtered, triggerSource);
     const name = lbl?.trim() || parsed.stockName || `Stock ${stocks.length+1}`;
     setStocks(p => [...p, { name, rawRows: parsed.rows, ...res }]);
     setActive(stocks.length);
@@ -652,7 +583,7 @@ function App() {
   }
   function submitAdd() {
     if (handleAdd(csvTxt, label)) {
-      setCsvTxt(""); setLabel(""); setModal(false); setStockSearch(""); setShowPicker(false);
+      setCsvTxt(""); setLabel(""); setModal(false);
     }
   }
   function removeStock(idx) {
@@ -666,8 +597,143 @@ function App() {
     rd.onload = ev => setCsvTxt(ev.target.result);
     rd.readAsText(f);
   }
+
+  // ---------- Export CSV ----------
+  function exportTradesCSV() {
+    if (!stocks.length) { showToast("कोई stock loaded नहीं है", "error"); return; }
+    const lines = [];
+    lines.push("# Weekly Trigger Backtest Export");
+    lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
+    lines.push(`# Trigger: ${TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label}`);
+    lines.push(`# Date Range: ${dateFrom || "start"} → ${dateTo || "end"}`);
+    lines.push("");
+    lines.push("Stock,Entry Date,Exit Date,Buy Price,Exit Price,Qty,Held Days,P&L,Return %");
+    let grandPnl = 0, grandTrades = 0, grandWins = 0;
+    stocks.forEach(s => {
+      const trs = s.trades || [];
+      trs.forEach(t => {
+        grandPnl += t.pnl; grandTrades++;
+        if (t.pnl > 0) grandWins++;
+        lines.push([
+          s.name,
+          fmtDISO(t.entryDate),
+          fmtDISO(t.exitDate),
+          t.entry.toFixed(2),
+          t.exit.toFixed(2),
+          t.shares,
+          t.days,
+          t.pnl.toFixed(2),
+          t.pct.toFixed(2)
+        ].join(","));
+      });
+    });
+    lines.push("");
+    lines.push("SUMMARY");
+    lines.push(`Total Stocks,${stocks.length}`);
+    lines.push(`Total Trades,${grandTrades}`);
+    lines.push(`Winning Trades,${grandWins}`);
+    lines.push(`Win Rate,${grandTrades ? ((grandWins/grandTrades)*100).toFixed(2) : 0}%`);
+    lines.push(`Total P&L,${grandPnl.toFixed(2)}`);
+    lines.push("");
+    lines.push("STOCK-WISE SUMMARY");
+    lines.push("Stock,Trades,Wins,Losses,Open Position,Total P&L");
+    stocks.forEach(s => {
+      const trs = s.trades || [];
+      const wins = trs.filter(t=>t.pnl>0).length;
+      const losses = trs.length - wins;
+      const pnl = trs.reduce((a,t)=>a+t.pnl,0);
+      const open = s.openPosition ? `${s.openPosition.shares} sh @ ₹${s.openPosition.avg.toFixed(2)}` : "—";
+      lines.push([s.name, trs.length, wins, losses, open, pnl.toFixed(2)].join(","));
+    });
+
+    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backtest_trades_${fmtDISO(new Date())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`📥 CSV exported (${grandTrades} trades)`, "success");
+    setExportOpen(false);
+  }
+
+  function exportEventsCSV() {
+    const lines = [];
+    lines.push("# Weekly Trigger — Event Log Export");
+    lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
+    lines.push("");
+    lines.push("Stock,Date,Event,Close,Trigger,Buy Price,Target");
+    stocks.forEach(s => {
+      (s.rows || []).forEach(r => {
+        if (!r.events?.length) return;
+        r.events.forEach(ev => {
+          lines.push([
+            s.name,
+            fmtDISO(r.date),
+            ev,
+            r.close.toFixed(2),
+            r.wkTrigger ? r.wkTrigger.toFixed(2) : "",
+            r.buyPrice ? r.buyPrice.toFixed(2) : "",
+            r.position ? r.position.target.toFixed(2) : ""
+          ].join(","));
+        });
+      });
+    });
+    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backtest_events_${fmtDISO(new Date())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`📥 Events CSV exported`, "success");
+    setExportOpen(false);
+  }
+
+  function exportPortfolioCSV() {
+    const lines = [];
+    lines.push("# Portfolio Summary");
+    lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
+    lines.push(`# Trigger: ${TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label}`);
+    lines.push("");
+    lines.push("Stock,Trades,Wins,Losses,Win %,Total P&L,Open Qty,Open Avg,Open Unrealized");
+    let gP=0, gT=0, gW=0;
+    stocks.forEach(s => {
+      const trs = s.trades || [];
+      const wins = trs.filter(t=>t.pnl>0).length;
+      const pnl = trs.reduce((a,t)=>a+t.pnl,0);
+      gP+=pnl; gT+=trs.length; gW+=wins;
+      lines.push([
+        s.name, trs.length, wins, trs.length-wins,
+        trs.length ? ((wins/trs.length)*100).toFixed(1) : "0",
+        pnl.toFixed(2),
+        s.openPosition ? s.openPosition.shares : "",
+        s.openPosition ? s.openPosition.avg.toFixed(2) : "",
+        s.openPosition ? s.openPosition.unrealized.toFixed(2) : ""
+      ].join(","));
+    });
+    lines.push("");
+    lines.push(`TOTAL,${gT},${gW},${gT-gW},${gT?((gW/gT)*100).toFixed(1):0},${gP.toFixed(2)},,,`);
+
+    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backtest_portfolio_${fmtDISO(new Date())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`📥 Portfolio CSV exported`, "success");
+    setExportOpen(false);
+  }
+
   const s = stocks[active];
-  const last = s?.rows[s.rows.length-1];
+  const last = s?.rows?.[s.rows.length-1];
   const C = {
     bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb",
     dim:"#4a6fa5", muted:"#64748b",
@@ -688,12 +754,17 @@ function App() {
   const wins = s ? s.trades.filter(t=>t.pnl>0).length : 0;
   const sourceLabel = TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label.split(" ")[0] || "1W";
 
+  // Overall portfolio stats
+  const portfolioTrades = stocks.reduce((a,s)=>a+(s.trades?.length||0),0);
+  const portfolioPnl = stocks.reduce((a,s)=>a+((s.trades||[]).reduce((x,t)=>x+t.pnl,0)),0);
+  const portfolioWins = stocks.reduce((a,s)=>a+((s.trades||[]).filter(t=>t.pnl>0).length),0);
+
   return (
     <div style={{ fontFamily:"'Inter',system-ui,sans-serif", background:C.bg, color:C.text, minHeight:"100vh", fontSize:14 }}>
-      <div style={{ background:C.card, padding:"12px 16px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
-        <div style={{ flex:1, minWidth:150 }}>
-          <span style={{ fontWeight:700, fontSize:16 }}>📈 Weekly Trigger Backtest</span>
-          <span style={{ fontSize:11, color:C.muted, marginLeft:8 }}>Auto</span>
+      {/* Row 1: Title + Main Controls */}
+      <div style={{ background:C.card, padding:"10px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
+        <div style={{ flex:1, minWidth:140 }}>
+          <span style={{ fontWeight:700, fontSize:15 }}>📈 Weekly Trigger Backtest</span>
         </div>
         <select value={triggerSource} onChange={e=>changeTriggerSource(e.target.value)}
           style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
@@ -701,10 +772,10 @@ function App() {
         </select>
         <select value={range} onChange={e=>setRange(e.target.value)}
           style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
-          <option value="6mo">6 Months</option>
-          <option value="1y">1 Year</option>
-          <option value="2y">2 Years</option>
-          <option value="5y">5 Years</option>
+          <option value="6mo">6M</option>
+          <option value="1y">1Y</option>
+          <option value="2y">2Y</option>
+          <option value="5y">5Y</option>
         </select>
         <button onClick={()=>setListOpen(true)}
           style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
@@ -713,6 +784,37 @@ function App() {
         <button onClick={()=>setModal(true)}
           style={{ background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
           + CSV
+        </button>
+      </div>
+
+      {/* Row 2: Date Range + Export */}
+      <div style={{ background:"#0a1628", padding:"8px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
+        <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>📅 Date Range:</span>
+        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 8px", fontSize:12, outline:"none" }}/>
+        <span style={{ color:C.muted, fontSize:12 }}>→</span>
+        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 8px", fontSize:12, outline:"none" }}/>
+        <button onClick={applyDateRange}
+          style={{ background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"5px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          Apply
+        </button>
+        {(dateFrom || dateTo) && (
+          <button onClick={resetDateRange}
+            style={{ background:"none", color:C.muted, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>
+            ✕ Reset
+          </button>
+        )}
+        <div style={{ flex:1 }}/>
+        <button onClick={()=>setExportOpen(true)}
+          disabled={!stocks.length}
+          style={{
+            background: stocks.length ? "linear-gradient(135deg,#16a34a,#22c55e)" : C.border,
+            color:"#fff", border:"none", borderRadius:8, padding:"5px 14px",
+            fontSize:12, fontWeight:700, cursor: stocks.length ? "pointer" : "not-allowed",
+            opacity: stocks.length ? 1 : 0.5
+          }}>
+          📥 Export CSV
         </button>
       </div>
 
@@ -740,11 +842,19 @@ function App() {
                 style={{ background:"none", border:"none", color:C.muted, cursor:"pointer", fontSize:14, padding:"0 4px 0 0", lineHeight:1 }}>×</button>
             </div>
           ))}
+          {stocks.length > 1 && (
+            <div style={{
+              marginLeft:"auto", padding:"9px 12px", fontSize:11, color:C.muted,
+              whiteSpace:"nowrap", borderLeft:`1px solid ${C.border}`
+            }}>
+              📊 {stocks.length} stocks · ₹{inr(portfolioPnl)} · {portfolioTrades} trades
+            </div>
+          )}
         </div>
       )}
 
       {!s && !autoProgress && (
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:18, padding:48, minHeight:"65vh", textAlign:"center" }}>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:18, padding:48, minHeight:"60vh", textAlign:"center" }}>
           <div style={{ fontSize:52 }}>🚀</div>
           <div>
             <div style={{ fontWeight:700, fontSize:20, marginBottom:6 }}>Auto Backtest — One Click</div>
@@ -758,14 +868,13 @@ function App() {
               🚀 Load All Suitable
             </button>
           </div>
-          <div style={{ ...card(), padding:"12px 18px", maxWidth:460, textAlign:"left" }}>
+          <div style={{ ...card(), padding:"12px 18px", maxWidth:480, textAlign:"left" }}>
             <div style={{ fontSize:12, color:C.muted, lineHeight:1.9 }}>
-              <b style={{color:C.text}}>कैसे काम करता है:</b><br/>
-              1️⃣ <b style={{color:"#93c5fd"}}>Stocks List</b> से कोई भी stock चुनें<br/>
-              2️⃣ Yahoo Finance से <b style={{color:"#60a5fa"}}>1 साल का data</b> auto-fetch<br/>
-              3️⃣ <b style={{color:C.gtt}}>Trigger dropdown</b>: 1W / 2W / 4W High चुनें<br/>
-              4️⃣ Chart, trades, P&L सब अपने आप तैयार<br/>
-              <span style={{color:C.gtt}}>💡 "Load All Suitable" दबाएँ — 55 stocks एक साथ!</span>
+              <b style={{color:C.text}}>Features:</b><br/>
+              📊 <b style={{color:"#93c5fd"}}>Auto-fetch</b> Yahoo Finance से (default 1 साल)<br/>
+              🎯 <b style={{color:C.gtt}}>Trigger</b>: 1W / 2W / 4W High चुनें<br/>
+              📅 <b style={{color:"#22c55e"}}>Date Range</b>: किसी specific period का backtest<br/>
+              📥 <b style={{color:"#22c55e"}}>Export CSV</b>: trades, events, portfolio download
             </div>
           </div>
         </div>
@@ -793,6 +902,11 @@ function App() {
             <span style={{background:"#0a1628",color:"#fbbf24",border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
               🎯 {sourceLabel} Trigger
             </span>
+            {(dateFrom || dateTo) && (
+              <span style={{background:"#0a2e1a",color:"#4ade80",border:"1px solid #166534",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
+                📅 {dateFrom || "start"} → {dateTo || "end"}
+              </span>
+            )}
             {s.openPosition ? (
               <span style={{ background:"#04130b", color:C.buy, border:"1px solid #166534", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
                 📈 HOLDING {s.openPosition.shares} @ ₹{fmtN(s.openPosition.avg)} — Target ₹{fmtN(s.openPosition.target)}
@@ -938,9 +1052,40 @@ function App() {
 
       {listOpen && <StocksListModal onClose={()=>setListOpen(false)} onPick={pickFromList} loadingSym={loadingSym} autoLoadAll={autoLoadAll} autoProgress={autoProgress} />}
 
+      {exportOpen && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:20}}
+          onClick={e=>e.currentTarget===e.target && setExportOpen(false)}>
+          <div style={{background:"#0d1a2a",border:`1px solid ${C.border}`,borderRadius:14,padding:20,width:"100%",maxWidth:400}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:6}}>📥 Export CSV</div>
+            <div style={{fontSize:12,color:C.muted,marginBottom:16}}>
+              {stocks.length} stocks loaded · {portfolioTrades} trades · ₹{inr(portfolioPnl)} P&L
+            </div>
+            <button onClick={exportTradesCSV}
+              style={{width:"100%",background:"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+              💼 Trades CSV<br/>
+              <span style={{fontSize:11,fontWeight:400,opacity:0.9}}>सारे trades + stock-wise summary</span>
+            </button>
+            <button onClick={exportEventsCSV}
+              style={{width:"100%",background:"linear-gradient(135deg,#2563eb,#3b82f6)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+              📜 Events CSV<br/>
+              <span style={{fontSize:11,fontWeight:400,opacity:0.9}}>सारे Buy / Target / Ignore events</span>
+            </button>
+            <button onClick={exportPortfolioCSV}
+              style={{width:"100%",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+              📊 Portfolio CSV<br/>
+              <span style={{fontSize:11,fontWeight:400,opacity:0.9}}>सारे stocks का summary एक साथ</span>
+            </button>
+            <button onClick={()=>setExportOpen(false)}
+              style={{width:"100%",background:C.border,color:C.text,border:"none",borderRadius:10,padding:"10px",fontSize:13,cursor:"pointer",marginTop:4}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {modal && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.8)", display:"flex", alignItems:"flex-end", zIndex:100 }}
-          onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""), setStockSearch(""), setShowPicker(false))}>
+          onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""))}>
           <div style={{ background:"#0d1a2a", borderTop:`1px solid ${C.border}`, borderRadius:"18px 18px 0 0", padding:20, width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
             <div style={{ fontWeight:700, fontSize:16, marginBottom:18 }}>📥 CSV Upload (Optional)</div>
             <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>Stock का नाम</label>
