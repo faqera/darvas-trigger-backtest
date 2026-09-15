@@ -24,6 +24,108 @@ const QTY_HIGH = 1;
 const QTY_LOW = 2;
 const QTY_THRESHOLD = 3000;
 
+// ---------- Top 100 Market Cap Stocks (Darvas List) ----------
+// out: "S" = Suitable, "A" = Avoid
+const STOCKS_DB = [
+  {sym:"RELIANCE",   name:"Reliance Industries",      cmp:1263,    h:1611.80, l:1249.80, out:"S"},
+  {sym:"TCS",        name:"Tata Consultancy Services",cmp:2207.90, h:3350.00, l:1976.80, out:"S"},
+  {sym:"HDFCBANK",   name:"HDFC Bank",                cmp:708.50,  h:1020.50, l:681.90,  out:"S"},
+  {sym:"ICICIBANK",  name:"ICICI Bank",               cmp:1381.60, h:1480.00, l:1187.60, out:"A"},
+  {sym:"HINDUNILVR", name:"Hindustan Unilever",       cmp:1934.90, h:2633.68, l:1926.20, out:"S"},
+  {sym:"INFY",       name:"Infosys",                  cmp:1038.70, h:1728.00, l:982.40,  out:"S"},
+  {sym:"ITC",        name:"ITC",                      cmp:261.45,  h:426.40,  l:255.50,  out:"S"},
+  {sym:"SBIN",       name:"State Bank of India",      cmp:996.20,  h:1234.70, l:819.00,  out:"A"},
+  {sym:"BHARTIARTL", name:"Bharti Airtel",            cmp:1841.00, h:2174.50, l:1740.50, out:"S"},
+  {sym:"KOTAKBANK",  name:"Kotak Mahindra Bank",      cmp:417.70,  h:453.20,  l:345.50,  out:"S"},
+  {sym:"BAJFINANCE", name:"Bajaj Finance",            cmp:1035.00, h:1176.40, l:787.90,  out:"A"},
+  {sym:"LICI",       name:"Life Insurance Corp",      cmp:403.80,  h:468.48,  l:360.75,  out:"S"},
+  {sym:"LT",         name:"Larsen & Toubro",          cmp:3938.20, h:4440.00, l:3288.10, out:"S"},
+  {sym:"HCLTECH",    name:"HCL Technologies",         cmp:1214.00, h:1780.10, l:1030.00, out:"S"},
+  {sym:"ASIANPAINT", name:"Asian Paints",             cmp:2467.70, h:2985.70, l:2115.00, out:"S"},
+  {sym:"AXISBANK",   name:"Axis Bank",                cmp:1251.10, h:1418.30, l:1069.00, out:"A"},
+  {sym:"MARUTI",     name:"Maruti Suzuki",            cmp:12432.00,h:17370.00,l:12201.00,out:"S"},
+  {sym:"SUNPHARMA",  name:"Sun Pharmaceutical",       cmp:1840.50, h:2046.90, l:1548.00, out:"A"},
+  {sym:"TITAN",      name:"Titan Company",            cmp:5005.00, h:5186.70, l:3303.10, out:"A"},
+  {sym:"DMART",      name:"Avenue Supermarts",        cmp:3685.00, h:4818.00, l:3529.00, out:"S"},
+  {sym:"ULTRACEMCO", name:"UltraTech Cement",         cmp:11000.00,h:13110.00,l:10325.00,out:"S"},
+  {sym:"BAJAJFINSV", name:"Bajaj Finserv",            cmp:1924.00, h:2195.00, l:1597.00, out:"S"},
+  {sym:"WIPRO",      name:"Wipro",                    cmp:167.31,  h:273.10,  l:165.16,  out:"S"},
+  {sym:"ADANIENT",   name:"Adani Enterprises",        cmp:3061.00, h:3245.00, l:1753.00, out:"A"},
+  {sym:"ONGC",       name:"Oil & Natural Gas Corp",   cmp:233.55,  h:307.50,  l:227.65,  out:"S"},
+  {sym:"NTPC",       name:"NTPC",                     cmp:332.00,  h:414.40,  l:315.55,  out:"A"},
+  {sym:"JSWSTEEL",   name:"JSW Steel",                cmp:1269.30, h:1351.00, l:1073.20, out:"A"},
+  {sym:"POWERGRID",  name:"Power Grid Corp",          cmp:269.00,  h:324.95,  l:250.00,  out:"A"},
+  {sym:"M&M",        name:"Mahindra & Mahindra",      cmp:3114.60, h:3839.90, l:2896.00, out:"S"},
+  {sym:"ADANIGREEN", name:"Adani Green Energy",       cmp:1282.70, h:1631.50, l:765.00,  out:"A"},
+  {sym:"ADANIPORTS", name:"Adani Ports & SEZ",        cmp:1767.50, h:1891.10, l:1292.00, out:"A"},
+  {sym:"COALINDIA",  name:"Coal India",               cmp:425.00,  h:491.25,  l:369.60,  out:"A"},
+  {sym:"TATASTEEL",  name:"Tata Steel",               cmp:182.58,  h:224.40,  l:160.06,  out:"A"},
+  {sym:"HINDZINC",   name:"Hindustan Zinc",           cmp:576.50,  h:733.00,  l:433.55,  out:"A"},
+  {sym:"PIDILITIND", name:"Pidilite Industries",      cmp:1562.00, h:1707.50, l:1259.00, out:"A"},
+  {sym:"SIEMENS",    name:"Siemens India",            cmp:3931.00, h:4149.40, l:2826.00, out:"A"},
+  {sym:"ADANIENSOL", name:"Adani Energy Solutions",   cmp:1376.70, h:1789.00, l:803.10,  out:"A"},
+  {sym:"SBILIFE",    name:"SBI Life Insurance",       cmp:1692.00, h:2132.00, l:1671.00, out:"S"},
+  {sym:"IOC",        name:"Indian Oil Corp",          cmp:135.71,  h:188.96,  l:130.22,  out:"S"},
+  {sym:"BAJAJ-AUTO", name:"Bajaj Auto",               cmp:11652.00,h:12470.00,l:8491.50, out:"A"},
+  {sym:"GRASIM",     name:"Grasim Industries",        cmp:3283.60, h:3411.10, l:2502.50, out:"A"},
+  {sym:"TECHM",      name:"Tech Mahindra",            cmp:1538.90, h:1854.00, l:1304.10, out:"S"},
+  {sym:"HDFCLIFE",   name:"HDFC Life Insurance",      cmp:528.30,  h:796.90,  l:508.70,  out:"S"},
+  {sym:"BRITANNIA",  name:"Britannia Industries",     cmp:4982.00, h:6319.50, l:4945.00, out:"S"},
+  {sym:"VEDL",       name:"Vedanta",                  cmp:263.40,  h:360.00,  l:155.86,  out:"S"},
+  {sym:"GODREJCP",   name:"Godrej Consumer Products", cmp:865.00,  h:1273.90, l:855.15,  out:"S"},
+  {sym:"DABUR",      name:"Dabur India",              cmp:376.00,  h:548.40,  l:368.05,  out:"S"},
+  {sym:"ATGL",       name:"Adani Total Gas",          cmp:596.05,  h:859.85,  l:462.80,  out:"A"},
+  {sym:"SHREECEM",   name:"Shree Cement",             cmp:22570.00,h:30285.00,l:22370.00,out:"S"},
+  {sym:"HAL",        name:"Hindustan Aeronautics",    cmp:4917.00, h:5149.90, l:3479.10, out:"A"},
+  {sym:"HINDALCO",   name:"Hindalco Industries",      cmp:985.50,  h:1176.00, l:731.95,  out:"A"},
+  {sym:"VBL",        name:"Varun Beverages",          cmp:413.95,  h:555.80,  l:381.00,  out:"A"},
+  {sym:"DLF",        name:"DLF",                      cmp:643.00,  h:794.80,  l:489.40,  out:"S"},
+  {sym:"BANKBARODA", name:"Bank of Baroda",           cmp:236.84,  h:325.50,  l:234.05,  out:"S"},
+  {sym:"INDUSINDBK", name:"IndusInd Bank",            cmp:978.20,  h:1077.85, l:710.60,  out:"A"},
+  {sym:"EICHERMOT",  name:"Eicher Motors",            cmp:7568.00, h:8230.00, l:6442.00, out:"S"},
+  {sym:"DRREDDY",    name:"Dr. Reddy's Labs",         cmp:1173.00, h:1414.90, l:1101.00, out:"S"},
+  {sym:"DIVISLAB",   name:"Divi's Laboratories",      cmp:9344.00, h:9615.00, l:5636.50, out:"A"},
+  {sym:"BPCL",       name:"Bharat Petroleum",         cmp:305.15,  h:391.65,  l:266.60,  out:"S"},
+  {sym:"HAVELLS",    name:"Havells India",            cmp:1111.90, h:1621.10, l:1096.20, out:"S"},
+  {sym:"ADANIPOWER", name:"Adani Power",              cmp:209.70,  h:254.20,  l:120.00,  out:"A"},
+  {sym:"INDIGO",     name:"InterGlobe Aviation",      cmp:4969.00, h:5970.00, l:3895.20, out:"S"},
+  {sym:"CIPLA",      name:"Cipla",                    cmp:1354.10, h:1673.00, l:1165.70, out:"S"},
+  {sym:"AMBUJACEM",  name:"Ambuja Cements",           cmp:392.60,  h:600.80,  l:387.65,  out:"S"},
+  {sym:"SRF",        name:"SRF",                      cmp:2480.00, h:3210.00, l:2355.00, out:"S"},
+  {sym:"ABB",        name:"ABB India",                cmp:7240.00, h:7924.50, l:4637.50, out:"A"},
+  {sym:"BEL",        name:"Bharat Electronics",       cmp:404.35,  h:473.45,  l:380.45,  out:"A"},
+  {sym:"SBICARD",    name:"SBI Cards",                cmp:656.05,  h:965.00,  l:565.45,  out:"S"},
+  {sym:"GAIL",       name:"GAIL India",               cmp:174.10,  h:186.87,  l:134.36,  out:"S"},
+  {sym:"BAJAJHLDNG", name:"Bajaj Holdings",           cmp:11140.00,h:13880.00,l:8588.00, out:"S"},
+  {sym:"TATACONSUM", name:"Tata Consumer Products",   cmp:990.50,  h:1282.70, l:988.00,  out:"S"},
+  {sym:"ICICIPRULI", name:"ICICI Prudential Life",    cmp:474.30,  h:706.80,  l:455.30,  out:"S"},
+  {sym:"CHOLAFIN",   name:"Cholamandalam Investment", cmp:1843.10, h:1952.50, l:1299.40, out:"A"},
+  {sym:"MARICO",     name:"Marico",                   cmp:805.00,  h:889.10,  l:690.30,  out:"A"},
+  {sym:"APOLLOHOSP", name:"Apollo Hospitals",         cmp:8870.00, h:9050.00, l:6696.50, out:"A"},
+  {sym:"TATAPOWER",  name:"Tata Power",               cmp:366.80,  h:464.90,  l:342.50,  out:"A"},
+  {sym:"BOSCHLTD",   name:"Bosch",                    cmp:48200.00,h:50000.00,l:28610.00,out:"A"},
+  {sym:"BERGEPAINT", name:"Berger Paints",            cmp:458.50,  h:594.55,  l:391.10,  out:"S"},
+  {sym:"JINDALSTEL", name:"Jindal Steel & Power",     cmp:1112.00, h:1306.20, l:977.10,  out:"A"},
+  {sym:"UPL",        name:"UPL",                      cmp:575.55,  h:812.20,  l:557.95,  out:"S"},
+  {sym:"AWL",        name:"Adani Wilmar",             cmp:185.80,  h:282.90,  l:171.19,  out:"S"},
+  {sym:"ICICIGI",    name:"ICICI Lombard",            cmp:1459.00, h:2064.90, l:1443.70, out:"S"},
+  {sym:"TORNTPHARM", name:"Torrent Pharmaceuticals",  cmp:4959.00, h:5250.00, l:3480.60, out:"A"},
+  {sym:"CANBK",      name:"Canara Bank",              cmp:123.50,  h:162.89,  l:110.64,  out:"A"},
+  {sym:"PNB",        name:"Punjab National Bank",     cmp:117.39,  h:135.15,  l:98.50,   out:"S"},
+  {sym:"TVSMOTOR",   name:"TVS Motor Company",        cmp:4133.00, h:4484.50, l:3228.00, out:"A"},
+  {sym:"ZYDUSLIFE",  name:"Zydus Lifesciences",       cmp:1121.00, h:1205.00, l:835.50,  out:"A"},
+  {sym:"TIINDIA",    name:"Tube Investments",         cmp:2607.60, h:3419.90, l:2164.90, out:"S"},
+  {sym:"TRENT",      name:"Trent",                    cmp:2811.00, h:3498.66, l:2183.66, out:"S"},
+  {sym:"IDBI",       name:"IDBI Bank",                cmp:83.55,   h:118.38,  l:61.01,   out:"S"},
+  {sym:"NAUKRI",     name:"Info Edge India",          cmp:1250.80, h:1433.60, l:908.30,  out:"S"},
+  {sym:"SHRIRAMFIN", name:"Shriram Finance",          cmp:1031.90, h:1153.70, l:602.80,  out:"A"},
+  {sym:"HEROMOTOCO", name:"Hero MotoCorp",            cmp:5234.50, h:6388.50, l:4671.50, out:"S"},
+  {sym:"INDHOTEL",   name:"Indian Hotels",            cmp:720.10,  h:792.55,  l:565.00,  out:"S"},
+  {sym:"PIIND",      name:"PI Industries",            cmp:2257.00, h:3832.90, l:2191.00, out:"S"},
+  {sym:"IRCTC",      name:"IRCTC",                    cmp:463.70,  h:739.00,  l:462.15,  out:"S"},
+  {sym:"CGPOWER",    name:"CG Power",                 cmp:912.50,  h:980.90,  l:525.50,  out:"A"},
+];
+
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
 const fmtN = (v,d=2) => (v==null||isNaN(v)) ? "—" : Number(v).toFixed(d);
 const inr = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
@@ -86,7 +188,6 @@ function calcWeekly(rows) {
   let shares=0, cost=0, avg=0, target=0;
   let lastBuyTrig=null, entryDate=null, entryIdx=-1;
   const trades = [];
-
   let curWk=null, boughtThisWeek=false, ignoredThisWeek=false, soldThisWeek=false;
 
   for (let i=0;i<rowsOut.length;i++) {
@@ -95,15 +196,10 @@ function calcWeekly(rows) {
 
     if (r.wk !== curWk) {
       curWk = r.wk;
-      boughtThisWeek = false;
-      ignoredThisWeek = false;
-      soldThisWeek = false;
+      boughtThisWeek = false; ignoredThisWeek = false; soldThisWeek = false;
       if (state==="IN_POSITION" && lastBuyTrig!=null && trig!=null) {
         const diff = Math.abs(trig-lastBuyTrig)/lastBuyTrig;
-        if (diff <= IGNORE_PCT) {
-          ignoredThisWeek = true;
-          r.events.push("ignore");
-        }
+        if (diff <= IGNORE_PCT) { ignoredThisWeek = true; r.events.push("ignore"); }
       }
     }
     if (trig == null) continue;
@@ -111,12 +207,8 @@ function calcWeekly(rows) {
     if (state==="IN_POSITION" && r.high >= target - 0.0001) {
       const exitPrice = target;
       const pnl = shares*exitPrice - cost;
-      trades.push({
-        entryDate, exitDate: r.date, entry: lastBuyTrig,
-        exit: exitPrice, days: i-entryIdx,
-        shares, cost, proceeds: shares*exitPrice,
-        pnl, pct: (exitPrice/avg-1)*100
-      });
+      trades.push({ entryDate, exitDate: r.date, entry: lastBuyTrig, exit: exitPrice,
+        days: i-entryIdx, shares, cost, proceeds: shares*exitPrice, pnl, pct: (exitPrice/avg-1)*100 });
       r.events.push("target");
       state="IDLE"; shares=0; cost=0; avg=0; target=0;
       lastBuyTrig=null; entryDate=null; entryIdx=-1;
@@ -126,29 +218,16 @@ function calcWeekly(rows) {
 
     if (!boughtThisWeek && !ignoredThisWeek && !soldThisWeek && r.low<=trig && trig<=r.high) {
       const qty = trig >= QTY_THRESHOLD ? QTY_HIGH : QTY_LOW;
-      shares += qty;
-      cost   += qty * trig;
-      avg     = cost/shares;
-      target  = avg * (1+TARGET_PCT);
-
+      shares += qty; cost += qty*trig; avg = cost/shares; target = avg*(1+TARGET_PCT);
       if (state==="IDLE") { entryDate = r.date; entryIdx = i; }
-      state = "IN_POSITION";
-      lastBuyTrig = trig;
-      boughtThisWeek = true;
-
-      r.events.push("buy");
-      r.buyPrice = trig;
+      state = "IN_POSITION"; lastBuyTrig = trig; boughtThisWeek = true;
+      r.events.push("buy"); r.buyPrice = trig;
       r.position = { avg, target, shares };
-
       if (r.high >= target - 0.0001) {
         const exitPrice = target;
         const pnl = shares*exitPrice - cost;
-        trades.push({
-          entryDate, exitDate: r.date, entry: trig,
-          exit: exitPrice, days: i-entryIdx,
-          shares, cost, proceeds: shares*exitPrice,
-          pnl, pct: (exitPrice/avg-1)*100
-        });
+        trades.push({ entryDate, exitDate: r.date, entry: trig, exit: exitPrice,
+          days: i-entryIdx, shares, cost, proceeds: shares*exitPrice, pnl, pct: (exitPrice/avg-1)*100 });
         r.events.push("target");
         state="IDLE"; shares=0; cost=0; avg=0; target=0;
         lastBuyTrig=null; entryDate=null; entryIdx=-1;
@@ -160,154 +239,14 @@ function calcWeekly(rows) {
   let openPosition = null;
   if (state==="IN_POSITION") {
     const last = rowsOut[rowsOut.length-1];
-    openPosition = {
-      shares, avg, target, lastBuyTrig, entryDate,
-      mark: last.close, unrealized: shares*last.close - cost
-    };
+    openPosition = { shares, avg, target, lastBuyTrig, entryDate,
+      mark: last.close, unrealized: shares*last.close - cost };
   }
 
   const lastWk = wks[wks.length-1];
   const pendingTrigger = wkHigh[lastWk];
-
   return { rows: rowsOut, trades, openPosition, pendingTrigger };
 }
-
-const NIFTY200 = [
-  {sym:"ADANIENT",name:"Adani Enterprises"},{sym:"RELIANCE",name:"Reliance Industries"},
-  {sym:"TCS",name:"Tata Consultancy Services"},{sym:"HDFCBANK",name:"HDFC Bank"},
-  {sym:"INFY",name:"Infosys"},{sym:"ICICIBANK",name:"ICICI Bank"},
-  {sym:"SBIN",name:"State Bank of India"},{sym:"BHARTIARTL",name:"Bharti Airtel"},
-  {sym:"ITC",name:"ITC"},{sym:"LT",name:"Larsen & Toubro"},
-  {sym:"KOTAKBANK",name:"Kotak Mahindra Bank"},{sym:"HINDUNILVR",name:"Hindustan Unilever"},
-  {sym:"AXISBANK",name:"Axis Bank"},{sym:"MARUTI",name:"Maruti Suzuki"},
-  {sym:"BAJFINANCE",name:"Bajaj Finance"},{sym:"ASIANPAINT",name:"Asian Paints"},
-  {sym:"TITAN",name:"Titan Company"},{sym:"WIPRO",name:"Wipro"},
-  {sym:"ONGC",name:"Oil & Natural Gas Corp"},{sym:"NTPC",name:"NTPC"},
-  {sym:"POWERGRID",name:"Power Grid Corp"},{sym:"COALINDIA",name:"Coal India"},
-  {sym:"TATASTEEL",name:"Tata Steel"},{sym:"JSWSTEEL",name:"JSW Steel"},
-  {sym:"HINDALCO",name:"Hindalco Industries"},{sym:"VEDL",name:"Vedanta"},
-  {sym:"ADANIPORTS",name:"Adani Ports & SEZ"},{sym:"ADANIGREEN",name:"Adani Green Energy"},
-  {sym:"ADANIPOWER",name:"Adani Power"},{sym:"ATGL",name:"Adani Total Gas"},
-  {sym:"AWL",name:"Adani Wilmar"},{sym:"DMART",name:"Avenue Supermarts"},
-  {sym:"PIDILITIND",name:"Pidilite Industries"},{sym:"BRITANNIA",name:"Britannia Industries"},
-  {sym:"DABUR",name:"Dabur India"},{sym:"GODREJCP",name:"Godrej Consumer Products"},
-  {sym:"MARICO",name:"Marico"},{sym:"NESTLEIND",name:"Nestle India"},
-  {sym:"TATACONSUM",name:"Tata Consumer Products"},{sym:"ULTRACEMCO",name:"UltraTech Cement"},
-  {sym:"SHREECEM",name:"Shree Cement"},{sym:"AMBUJACEM",name:"Ambuja Cements"},
-  {sym:"GRASIM",name:"Grasim Industries"},{sym:"DLF",name:"DLF"},
-  {sym:"GODREJPROP",name:"Godrej Properties"},{sym:"OBEROIRLTY",name:"Oberoi Realty"},
-  {sym:"LODHA",name:"Macrotech Developers"},{sym:"PRESTIGE",name:"Prestige Estates"},
-  {sym:"SUNPHARMA",name:"Sun Pharmaceutical"},{sym:"DRREDDY",name:"Dr. Reddy's Labs"},
-  {sym:"CIPLA",name:"Cipla"},{sym:"DIVISLAB",name:"Divi's Laboratories"},
-  {sym:"LUPIN",name:"Lupin"},{sym:"AUROPHARMA",name:"Aurobindo Pharma"},
-  {sym:"TORNTPHARM",name:"Torrent Pharmaceuticals"},{sym:"ZYDUSLIFE",name:"Zydus Lifesciences"},
-  {sym:"APOLLOHOSP",name:"Apollo Hospitals"},{sym:"MAXHEALTH",name:"Max Healthcare"},
-  {sym:"HDFCLIFE",name:"HDFC Life Insurance"},{sym:"SBILIFE",name:"SBI Life Insurance"},
-  {sym:"ICICIPRULI",name:"ICICI Prudential Life"},{sym:"ICICIGI",name:"ICICI Lombard"},
-  {sym:"SBICARD",name:"SBI Cards"},{sym:"BAJAJFINSV",name:"Bajaj Finserv"},
-  {sym:"BAJAJHLDNG",name:"Bajaj Holdings"},{sym:"BAJAJ-AUTO",name:"Bajaj Auto"},
-  {sym:"HEROMOTOCO",name:"Hero MotoCorp"},{sym:"EICHERMOT",name:"Eicher Motors"},
-  {sym:"TVSMOTOR",name:"TVS Motor Company"},{sym:"M&M",name:"Mahindra & Mahindra"},
-  {sym:"TATAMOTORS",name:"Tata Motors"},{sym:"INDIGO",name:"InterGlobe Aviation"},
-  {sym:"BEL",name:"Bharat Electronics"},{sym:"HAL",name:"Hindustan Aeronautics"},
-  {sym:"SIEMENS",name:"Siemens India"},{sym:"ABB",name:"ABB India"},
-  {sym:"HAVELLS",name:"Havells India"},{sym:"CUMMINSIND",name:"Cummins India"},
-  {sym:"BOSCHLTD",name:"Bosch"},{sym:"SCHAEFFLER",name:"Schaeffler India"},
-  {sym:"POLYCAB",name:"Polycab India"},{sym:"KEI",name:"KEI Industries"},
-  {sym:"ASTRAL",name:"Astral"},{sym:"KAJARIACER",name:"Kajaria Ceramics"},
-  {sym:"PIIND",name:"PI Industries"},{sym:"SRF",name:"SRF"},
-  {sym:"UPL",name:"UPL"},{sym:"DEEPAKNTR",name:"Deepak Nitrite"},
-  {sym:"NAVINFLUOR",name:"Navin Fluorine"},{sym:"FLUOROCHEM",name:"Gujarat Fluorochemicals"},
-  {sym:"ATUL",name:"Atul"},{sym:"SOLARINDS",name:"Solar Industries"},
-  {sym:"TRENT",name:"Trent"},{sym:"INDHOTEL",name:"Indian Hotels"},
-  {sym:"IRCTC",name:"IRCTC"},{sym:"NAUKRI",name:"Info Edge India"},
-  {sym:"ZOMATO",name:"Zomato"},{sym:"PAYTM",name:"Paytm"},
-  {sym:"POLICYBZR",name:"PB Fintech"},{sym:"FSN",name:"FSN E-Commerce"},
-  {sym:"INDIAMART",name:"IndiaMART"},{sym:"SWIGGY",name:"Swiggy"},
-  {sym:"DELHIVERY",name:"Delhivery"},{sym:"IRFC",name:"Indian Railway Finance"},
-  {sym:"RVNL",name:"Rail Vikas Nigam"},{sym:"HUDCO",name:"HUDCO"},
-  {sym:"PFC",name:"Power Finance Corp"},{sym:"RECLTD",name:"REC"},
-  {sym:"LICI",name:"Life Insurance Corp"},{sym:"LICHSGFIN",name:"LIC Housing Finance"},
-  {sym:"CHOLAFIN",name:"Cholamandalam Investment"},{sym:"SHRIRAMFIN",name:"Shriram Finance"},
-  {sym:"MUTHOOTFIN",name:"Muthoot Finance"},{sym:"M&MFIN",name:"M&M Financial"},
-  {sym:"POONAWALLA",name:"Poonawalla Fincorp"},{sym:"MANAPPURAM",name:"Manappuram Finance"},
-  {sym:"BANKBARODA",name:"Bank of Baroda"},{sym:"PNB",name:"Punjab National Bank"},
-  {sym:"CANBK",name:"Canara Bank"},{sym:"UNIONBANK",name:"Union Bank of India"},
-  {sym:"IDFCFIRSTB",name:"IDFC First Bank"},{sym:"FEDERALBNK",name:"Federal Bank"},
-  {sym:"BANDHANBNK",name:"Bandhan Bank"},{sym:"INDUSINDBK",name:"IndusInd Bank"},
-  {sym:"YESBANK",name:"Yes Bank"},{sym:"IDEA",name:"Vodafone Idea"},
-  {sym:"HCLTECH",name:"HCL Technologies"},{sym:"TECHM",name:"Tech Mahindra"},
-  {sym:"LTIM",name:"LTIMindtree"},{sym:"MPHASIS",name:"Mphasis"},
-  {sym:"PERSISTENT",name:"Persistent Systems"},{sym:"COFORGE",name:"Coforge"},
-  {sym:"KPITTECH",name:"KPIT Technologies"},{sym:"LTTS",name:"L&T Technology Services"},
-  {sym:"TATAELXSI",name:"Tata Elxsi"},{sym:"OFSS",name:"Oracle Financial Services"},
-  {sym:"TATACOMM",name:"Tata Communications"},{sym:"TATAPOWER",name:"Tata Power"},
-  {sym:"JSWENERGY",name:"JSW Energy"},{sym:"TORNTPOWER",name:"Torrent Power"},
-  {sym:"NHPC",name:"NHPC"},{sym:"SJVN",name:"SJVN"},
-  {sym:"SUZLON",name:"Suzlon Energy"},{sym:"BHEL",name:"Bharat Heavy Electricals"},
-  {sym:"CGPOWER",name:"CG Power"},{sym:"HINDCOPPER",name:"Hindustan Copper"},
-  {sym:"NATIONALUM",name:"National Aluminium"},{sym:"HINDZINC",name:"Hindustan Zinc"},
-  {sym:"JINDALSTEL",name:"Jindal Steel & Power"},{sym:"SAIL",name:"Steel Authority of India"},
-  {sym:"NMDC",name:"NMDC"},{sym:"JSL",name:"Jindal Stainless"},
-  {sym:"APLAPOLLO",name:"APL Apollo Tubes"},{sym:"RATNAMANI",name:"Ratnamani Metals"},
-  {sym:"CONCOR",name:"Container Corp"},{sym:"GMRAIRPORT",name:"GMR Airports"},
-  {sym:"GAIL",name:"GAIL India"},{sym:"IOC",name:"Indian Oil Corp"},
-  {sym:"BPCL",name:"Bharat Petroleum"},{sym:"HINDPETRO",name:"Hindustan Petroleum"},
-  {sym:"PETRONET",name:"Petronet LNG"},{sym:"IGL",name:"Indraprastha Gas"},
-  {sym:"GUJGASLTD",name:"Gujarat Gas"},{sym:"GSPL",name:"Gujarat State Petronet"},
-  {sym:"OIL",name:"Oil India"},{sym:"MGL",name:"Mahanagar Gas"},
-  {sym:"DIXON",name:"Dixon Technologies"},{sym:"AMBER",name:"Amber Enterprises"},
-  {sym:"VOLTAS",name:"Voltas"},{sym:"BLUESTARCO",name:"Blue Star"},
-  {sym:"CROMPTON",name:"Crompton Greaves"},{sym:"BAJAJELEC",name:"Bajaj Electricals"},
-  {sym:"WHIRLPOOL",name:"Whirlpool India"},{sym:"HONAUT",name:"Honeywell Automation"},
-  {sym:"THERMAX",name:"Thermax"},{sym:"AIAENG",name:"AIA Engineering"},
-  {sym:"GRINDWELL",name:"Grindwell Norton"},{sym:"CARBORUNIV",name:"Carborundum Universal"},
-  {sym:"SUPREMEIND",name:"Supreme Industries"},{sym:"FINPIPE",name:"Finolex Industries"},
-  {sym:"PRINCEPIPE",name:"Prince Pipes"},{sym:"APOLLOPIPE",name:"Apollo Pipes"},
-  {sym:"ASTERDM",name:"Aster DM Healthcare"},{sym:"NH",name:"Narayana Hrudayalaya"},
-  {sym:"FORTIS",name:"Fortis Healthcare"},{sym:"MAXHEALTH",name:"Max Healthcare"},
-  {sym:"LALPATHLAB",name:"Dr Lal PathLabs"},{sym:"METROPOLIS",name:"Metropolis Healthcare"},
-  {sym:"THYROCARE",name:"Thyrocare Technologies"},{sym:"SYNGENE",name:"Syngene International"},
-  {sym:"BIOCON",name:"Biocon"},{sym:"ALKEM",name:"Alkem Laboratories"},
-  {sym:"IPCALAB",name:"IPCA Laboratories"},{sym:"AJANTPHARM",name:"Ajanta Pharma"},
-  {sym:"GLENMARK",name:"Glenmark Pharmaceuticals"},{sym:"NATCOPHARM",name:"Natco Pharma"},
-  {sym:"GRANULES",name:"Granules India"},{sym:"JBCHEPHARM",name:"JB Chemicals"},
-  {sym:"ERIS",name:"Eris Lifesciences"},{sym:"ABBOTINDIA",name:"Abbott India"},
-  {sym:"PFIZER",name:"Pfizer"},{sym:"GLAXO",name:"GlaxoSmithKline Pharma"},
-  {sym:"SANOFI",name:"Sanofi India"},{sym:"PGHH",name:"P&G Hygiene"},
-  {sym:"COLPAL",name:"Colgate-Palmolive"},{sym:"HONASA",name:"Honasa Consumer"},
-  {sym:"GILLETTE",name:"Gillette India"},{sym:"JYOTHYLAB",name:"Jyothy Labs"},
-  {sym:"VBL",name:"Varun Beverages"},{sym:"UBL",name:"United Breweries"},
-  {sym:"RADICO",name:"Radico Khaitan"},{sym:"MCDOWELL-N",name:"United Spirits"},
-  {sym:"JUBLFOOD",name:"Jubilant FoodWorks"},{sym:"DEVYANI",name:"Devyani International"},
-  {sym:"SAPPHIRE",name:"Sapphire Foods"},{sym:"WESTLIFE",name:"Westlife Foodworld"},
-  {sym:"BARBEQUE",name:"Barbeque Nation"},{sym:"RESTAURANT",name:"Restaurant Brands Asia"},
-  {sym:"PAGEIND",name:"Page Industries"},{sym:"KALYANKJIL",name:"Kalyan Jewellers"},
-  {sym:"TITAN",name:"Titan Company"},{sym:"RAJESHEXPO",name:"Rajesh Exports"},
-  {sym:"PCJEWELLER",name:"PC Jeweller"},{sym:"THANGAMAYL",name:"Thangamayil Jewellery"},
-  {sym:"SENCO",name:"Senco Gold"},{sym:"TBZ",name:"TBZ"},{sym:"SHOPERSTOP",name:"Shoppers Stop"},
-  {sym:"VMART",name:"V-Mart Retail"},{sym:"ABFRL",name:"Aditya Birla Fashion"},
-  {sym:"TRENT",name:"Trent"},{sym:"ARVIND",name:"Arvind"},{sym:"RAYMOND",name:"Raymond"},
-  {sym:"KPRMILL",name:"KPR Mill"},{sym:"WELSPUNIND",name:"Welspun India"},
-  {sym:"TRIDENT",name:"Trident"},{sym:"VARDHACRLC",name:"Vardhman Acrylics"},
-  {sym:"GOKEX",name:"Gokaldas Exports"},{sym:"SPAL",name:"S P Apparels"},
-  {sym:"KDDL",name:"KDDL"},{sym:"ETHOS",name:"Ethos"},{sym:"METROBRAND",name:"Metro Brands"},
-  {sym:"CAMPUS",name:"Campus Activewear"},{sym:"RELAXO",name:"Relaxo Footwears"},
-  {sym:"BATAINDIA",name:"Bata India"},{sym:"LIBERTSHOE",name:"Liberty Shoes"},
-  {sym:"MIRZAINT",name:"Mirza International"},{sym:"SAFARI",name:"Safari Industries"},
-  {sym:"VIPIND",name:"VIP Industries"},{sym:"BLUEDART",name:"Blue Dart Express"},
-  {sym:"GATI",name:"Gati"},{sym:"TCI",name:"Transport Corp of India"},
-  {sym:"MAHLOG",name:"Mahindra Logistics"},{sym:"ALLCARGOG",name:"Allcargo Logistics"},
-  {sym:"VRLLOG",name:"VRL Logistics"},{sym:"SNOWMAN",name:"Snowman Logistics"},
-  {sym:"RADICO",name:"Radico Khaitan"},{sym:"GLOBUSSPR",name:"Globus Spirits"},
-  {sym:"ASSOCIATED",name:"Associated Alcohols"},{sym:"TILAKNAGAR",name:"Tilaknagar Industries"},
-  {sym:"PICCADIL",name:"Piccadily Agro"},{sym:"SULA",name:"Sula Vineyards"},
-  {sym:"FRETAIL",name:"Future Retail"},{sym:"DMART",name:"Avenue Supermarts"},
-  {sym:"NILKAMAL",name:"Nilkamal"},{sym:"SUPREMEIND",name:"Supreme Industries"},
-  {sym:"ASTRAL",name:"Astral"},{sym:"FINOLEXIND",name:"Finolex Industries"},
-  {sym:"PRINCEPIPE",name:"Prince Pipes"},{sym:"APOLLOPIPE",name:"Apollo Pipes"},
-  {sym:"ASTERDM",name:"Aster DM Healthcare"}
-];
 
 const SAMPLE_CSV = `NSE:ADANIENT,Weekly Trigger Sample
 Date,Open,High,Low,Close,Volume
@@ -343,11 +282,6 @@ Date,Open,High,Low,Close,Volume
 16-Nov-22,4057.3,4096,3863.55,3956.6,0
 17-Nov-22,3970,4033,3900,4018.15,0
 18-Nov-22,4028.35,4043,3984,4019.8,0
-21-Nov-22,4019.95,4019.95,3921.95,4001.85,0
-22-Nov-22,4001.85,4056,3988,4034,0
-23-Nov-22,4050,4061.85,3873,3903.3,0
-24-Nov-22,3910,3935,3821,3921.1,0
-25-Nov-22,3929,3949.9,3845.3,3901.1,0
 19-Dec-22,3988,4104,3971.45,4075.3,0
 20-Dec-22,4095,4172,4066.4,4165.3,0
 21-Dec-22,4175,4190,3883.25,3901.95,0
@@ -428,52 +362,35 @@ function MiniChart({ rows, height=300 }) {
   const yLabels=Array.from({length:yticks+1},(_,i)=>minV+(range*i/yticks));
   const xticks=Math.min(6,rows.length);
   const xIdx=Array.from({length:xticks},(_,i)=>Math.floor(i*(rows.length-1)/(xticks-1||1)));
-
-  const trigSegs = [];
-  let cur=null;
+  const trigSegs=[]; let cur=null;
   rows.forEach(r=>{
-    const t = r.wkTrigger;
-    if (t==null) return;
-    if (!cur || cur.t!==t || cur.wk!==r.wk) {
-      if (cur) trigSegs.push(cur);
-      cur = { t, wk: r.wk, x1: x(r.ts), x2: x(r.ts) };
-    } else {
-      cur.x2 = x(r.ts);
-    }
+    const t=r.wkTrigger; if(t==null) return;
+    if(!cur||cur.t!==t||cur.wk!==r.wk){ if(cur)trigSegs.push(cur); cur={t,wk:r.wk,x1:x(r.ts),x2:x(r.ts)}; }
+    else cur.x2=x(r.ts);
   });
-  if (cur) trigSegs.push(cur);
-
+  if(cur)trigSegs.push(cur);
   return (
     <div style={{overflowX:"auto"}}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",minWidth:340,height:H,display:"block"}}
-        onMouseLeave={()=>setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",minWidth:340,height:H,display:"block"}} onMouseLeave={()=>setHover(null)}>
         {yLabels.map((v,i)=>(
-          <g key={i}>
-            <line x1={PAD.l} x2={W-PAD.r} y1={y(v)} y2={y(v)} stroke="#101f35" strokeDasharray="3 3"/>
-            <text x={PAD.l-4} y={y(v)+3} fill="#334a6a" fontSize="10" textAnchor="end">₹{v.toFixed(0)}</text>
-          </g>
+          <g key={i}><line x1={PAD.l} x2={W-PAD.r} y1={y(v)} y2={y(v)} stroke="#101f35" strokeDasharray="3 3"/>
+          <text x={PAD.l-4} y={y(v)+3} fill="#334a6a" fontSize="10" textAnchor="end">₹{v.toFixed(0)}</text></g>
         ))}
         {xIdx.map(i=>(
           <text key={i} x={x(rows[i].ts)} y={H-10} fill="#334a6a" fontSize="9" textAnchor="middle">
             {`${rows[i].date.getMonth()+1}/${String(rows[i].date.getFullYear()).slice(2)}`}
           </text>
         ))}
-        {trigSegs.map((s,i)=>(
-          <line key={'t'+i} x1={s.x1} x2={s.x2} y1={y(s.t)} y2={y(s.t)}
-            stroke="#fbbf24" strokeWidth="1.4" strokeDasharray="4 2" opacity="0.85"/>
-        ))}
+        {trigSegs.map((s,i)=>(<line key={'t'+i} x1={s.x1} x2={s.x2} y1={y(s.t)} y2={y(s.t)} stroke="#fbbf24" strokeWidth="1.4" strokeDasharray="4 2" opacity="0.85"/>))}
         <path d={line("close")} fill="none" stroke="#60a5fa" strokeWidth="2"/>
         {rows.map((r,i)=>{
-          const ev = r.events||[];
-          if (ev.includes("target")) return <circle key={'x'+i} cx={x(r.ts)} cy={y(r.close)} r="5" fill="#a855f7" stroke="#1e0b2e" strokeWidth="1.5"/>;
-          if (ev.includes("buy"))    return <circle key={'b'+i} cx={x(r.ts)} cy={y(r.close)} r="5" fill="#4ade80" stroke="#052e16" strokeWidth="1.5"/>;
-          if (ev.includes("ignore")) return <circle key={'g'+i} cx={x(r.ts)} cy={y(r.close)} r="3" fill="#64748b"/>;
+          const ev=r.events||[];
+          if(ev.includes("target"))return <circle key={'x'+i} cx={x(r.ts)} cy={y(r.close)} r="5" fill="#a855f7" stroke="#1e0b2e" strokeWidth="1.5"/>;
+          if(ev.includes("buy"))   return <circle key={'b'+i} cx={x(r.ts)} cy={y(r.close)} r="5" fill="#4ade80" stroke="#052e16" strokeWidth="1.5"/>;
+          if(ev.includes("ignore"))return <circle key={'g'+i} cx={x(r.ts)} cy={y(r.close)} r="3" fill="#64748b"/>;
           return null;
         })}
-        {rows.map((r,i)=>(
-          <rect key={i} x={x(r.ts)-4} y={PAD.t} width="8" height={ih} fill="transparent"
-            onMouseEnter={()=>setHover(r)} onTouchStart={()=>setHover(r)}/>
-        ))}
+        {rows.map((r,i)=>(<rect key={i} x={x(r.ts)-4} y={PAD.t} width="8" height={ih} fill="transparent" onMouseEnter={()=>setHover(r)} onTouchStart={()=>setHover(r)}/>))}
       </svg>
       {hover && (
         <div style={{background:"#0f1e33",border:"1px solid #2a3f5f",borderRadius:8,padding:"8px 12px",fontSize:11,lineHeight:1.7,fontFamily:"monospace",margin:"4px 10px"}}>
@@ -497,10 +414,84 @@ function MiniChart({ rows, height=300 }) {
   );
 }
 
+// ---------- Stocks List Modal ----------
+function StocksListModal({ onClose, onPick }) {
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState("all");
+  const filtered = STOCKS_DB.filter(s => {
+    if (filter === "S" && s.out !== "S") return false;
+    if (filter === "A" && s.out !== "A") return false;
+    if (!q) return true;
+    const ql = q.toLowerCase();
+    return s.sym.toLowerCase().includes(ql) || s.name.toLowerCase().includes(ql);
+  });
+  const sCount = STOCKS_DB.filter(s=>s.out==="S").length;
+  const aCount = STOCKS_DB.filter(s=>s.out==="A").length;
+  const C = {
+    bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb",
+    muted:"#64748b", text:"#dce8f8", suit:"#4ade80", avoid:"#f87171"
+  };
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"flex-end",zIndex:200}}
+      onClick={e=>e.currentTarget===e.target && onClose()}>
+      <div style={{background:"#0d1a2a",borderTop:`1px solid ${C.border}`,borderRadius:"18px 18px 0 0",padding:16,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16}}>📋 Stocks List</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+              {STOCKS_DB.length} stocks · <span style={{color:C.suit}}>{sCount} Suitable</span> · <span style={{color:C.avoid}}>{aCount} Avoid</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>×</button>
+        </div>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search: RELIANCE, INFY, HDFC..."
+          style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",outline:"none",marginBottom:8}}/>
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          {[["all","All",STOCKS_DB.length],["S","✅ Suitable",sCount],["A","⛔ Avoid",aCount]].map(([k,l,n])=>(
+            <button key={k} onClick={()=>setFilter(k)} style={{
+              background: filter===k ? C.accent : "none",
+              color: filter===k ? "#fff" : C.muted,
+              border:`1px solid ${filter===k ? C.accent : C.border}`,
+              borderRadius:8, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight: filter===k?700:400
+            }}>{l} ({n})</button>
+          ))}
+        </div>
+        <div style={{overflowY:"auto",flex:1,margin:"0 -8px",padding:"0 8px"}}>
+          {filtered.length===0 && <div style={{textAlign:"center",color:C.muted,padding:40}}>कोई stock नहीं मिला।</div>}
+          {filtered.map(s => (
+            <div key={s.sym} onClick={()=>onPick(s)}
+              style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{color:"#93c5fd",fontWeight:700,fontSize:13,fontFamily:"monospace"}}>{s.sym}</span>
+                  <span style={{
+                    background: s.out==="S" ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",
+                    color: s.out==="S" ? C.suit : C.avoid,
+                    border: `1px solid ${s.out==="S" ? "#166534" : "#7f1d1d"}`,
+                    borderRadius:20, padding:"1px 8px", fontSize:10, fontWeight:700
+                  }}>{s.out==="S" ? "Suitable" : "Avoid"}</span>
+                </div>
+                <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
+                <div style={{display:"flex",gap:12,marginTop:5,fontSize:11,color:"#94a3b8",flexWrap:"wrap"}}>
+                  <span>CMP: <b style={{color:"#e2e8f0"}}>₹{s.cmp.toLocaleString("en-IN")}</b></span>
+                  <span>52H: <b style={{color:C.avoid}}>₹{s.h.toLocaleString("en-IN")}</b></span>
+                  <span>52L: <b style={{color:C.suit}}>₹{s.l.toLocaleString("en-IN")}</b></span>
+                </div>
+              </div>
+              <div style={{color:"#334a6a",fontSize:18}}>›</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [stocks, setStocks] = useState([]);
   const [active, setActive] = useState(0);
   const [modal, setModal] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const [csvTxt, setCsvTxt] = useState("");
   const [label, setLabel] = useState("");
   const [err, setErr] = useState("");
@@ -524,6 +515,12 @@ function App() {
     }
   }
   function loadSample() { handleAdd(SAMPLE_CSV, "NSE:ADANIENT (Demo)"); }
+  function pickFromList(s) {
+    setListOpen(false);
+    setLabel("NSE:" + s.sym);
+    setCsvTxt("");
+    setModal(true);
+  }
   function removeStock(idx) {
     setStocks(p => p.filter((_,i)=>i!==idx));
     setActive(a => Math.max(0, a>=idx ? a-1 : a));
@@ -561,8 +558,12 @@ function App() {
       <div style={{ background:C.card, padding:"12px 16px", display:"flex", alignItems:"center", gap:10, borderBottom:`1px solid ${C.border}` }}>
         <div style={{ flex:1 }}>
           <span style={{ fontWeight:700, fontSize:16 }}>📈 Weekly Trigger Backtest</span>
-          <span style={{ fontSize:11, color:C.muted, marginLeft:10 }}>6% Target · ±2.75% Ignorable</span>
+          <span style={{ fontSize:11, color:C.muted, marginLeft:10 }}>6% · ±2.75%</span>
         </div>
+        <button onClick={()=>setListOpen(true)}
+          style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 12px", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          📋 Stocks
+        </button>
         <button onClick={()=>setModal(true)}
           style={{ background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"7px 14px", fontSize:13, fontWeight:600, cursor:"pointer" }}>
           + Stock
@@ -593,8 +594,11 @@ function App() {
             <div style={{ color:C.muted, fontSize:13 }}>Prev Week High → Trigger · Target = Avg × 1.06</div>
           </div>
           <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
-            <button onClick={()=>setModal(true)} style={{ background:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"11px 22px", fontSize:14, fontWeight:600, cursor:"pointer" }}>
-              + Stock Add करें
+            <button onClick={()=>setListOpen(true)} style={{ background:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"11px 22px", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+              📋 Stocks List देखें
+            </button>
+            <button onClick={()=>setModal(true)} style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:10, padding:"11px 22px", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+              + CSV Upload
             </button>
             <button onClick={loadSample} style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:10, padding:"11px 22px", fontSize:14, fontWeight:600, cursor:"pointer" }}>
               🔍 ADANIENT Demo
@@ -602,7 +606,7 @@ function App() {
           </div>
           <div style={{ ...card(), padding:"12px 18px", maxWidth:420, textAlign:"left" }}>
             <div style={{ fontSize:12, color:C.muted, lineHeight:1.9 }}>
-              <b style={{color:C.text}}>Strategy:</b><br/>
+              <b style={{color:C.text}}>Strategy (Adani Logic):</b><br/>
               1️⃣ पिछले हफ़्ते का High = इस हफ़्ते का <span style={{color:C.gtt}}>Trigger</span><br/>
               2️⃣ Trigger पिछले trigger के ±2.75% में → <span style={{color:C.muted}}>Skip</span><br/>
               3️⃣ Low ≤ Trigger ≤ High → <span style={{color:C.buy}}>BUY</span> (₹3000+ पर 1, नीचे 2)<br/>
@@ -772,12 +776,15 @@ function App() {
           )}
         </div>
       )}
+
+      {listOpen && <StocksListModal onClose={()=>setListOpen(false)} onPick={pickFromList} />}
+
       {modal && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.8)", display:"flex", alignItems:"flex-end", zIndex:100 }}
           onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""), setStockSearch(""), setShowPicker(false))}>
           <div style={{ background:"#0d1a2a", borderTop:`1px solid ${C.border}`, borderRadius:"18px 18px 0 0", padding:20, width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
             <div style={{ fontWeight:700, fontSize:16, marginBottom:18 }}>📥 Stock Data Add करें</div>
-            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>🔍 Nifty 200 से चुनें</label>
+            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>🔍 Stocks List से चुनें</label>
             <div style={{ position:"relative", marginBottom:10 }}>
               <input value={stockSearch}
                 onChange={e=>{setStockSearch(e.target.value); setShowPicker(true);}}
@@ -787,7 +794,7 @@ function App() {
                 style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:14, boxSizing:"border-box", outline:"none" }}/>
               {showPicker && stockSearch && (()=>{
                 const q = stockSearch.toLowerCase();
-                const hits = NIFTY200.filter(st => st.sym.toLowerCase().includes(q) || st.name.toLowerCase().includes(q)).slice(0,12);
+                const hits = STOCKS_DB.filter(st => st.sym.toLowerCase().includes(q) || st.name.toLowerCase().includes(q)).slice(0,12);
                 return (
                   <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:"#0a1628", border:`1px solid ${C.border}`, borderRadius:8, maxHeight:220, overflowY:"auto", zIndex:200 }}>
                     {hits.length===0 && <div style={{ padding:"10px 12px", color:C.muted, fontSize:12 }}>कोई result नहीं</div>}
