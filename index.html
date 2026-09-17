@@ -3,14 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Darvas Box Weekly Trigger Backtest v2</title>
+<title>Darvas Box Backtest v3 (Sheet-driven)</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #080f1a; -webkit-tap-highlight-color: transparent; }
   input, textarea, button, select { font-family: inherit; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; display: inline-block; }
-  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
 </style>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -19,15 +18,22 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState } = React;
+const { useState, useEffect } = React;
 
 /* ================================================================
-   RULE CONSTANTS
+   CONFIG — अपनी Google Sheet ID और tab name यहाँ सेट करें
    ================================================================ */
-const TARGET_PCT      = 0.06;    // Rule 4: 6% profit target
-const IGNORE_PCT      = 0.0275;  // Rule 3: ±2.75% ignorable range
-const PARTS           = 6;       // Rule 1: capital divided in 6 parts
-const DEFAULT_CAPITAL = 120000;  // Rule 1: default total trading capital
+const SHEET_ID   = "1ysa9VsNUnOKIC6CLcjdEhte4wO8HJ44F49d8plH0014";
+const SHEET_NAME = "Final List";   // ← exact tab name (case-sensitive)
+const SHEET_GID  = "1899449309";   // optional fallback
+
+/* ================================================================
+   RULES
+   ================================================================ */
+const TARGET_PCT      = 0.06;
+const IGNORE_PCT      = 0.0275;
+const PARTS           = 6;
+const DEFAULT_CAPITAL = 120000;
 const DEFAULT_RANGE   = "2y";
 
 const TRIGGER_SOURCES = [
@@ -37,122 +43,28 @@ const TRIGGER_SOURCES = [
 ];
 
 /* ================================================================
-   STOCK UNIVERSE (Top-100 market cap list)
+   FALLBACK LIST (अगर sheet fetch fail हो)
    ================================================================ */
-const STOCKS_DB = [
-  {sym:"RELIANCE",name:"Reliance Industries"},
-  {sym:"TCS",name:"Tata Consultancy Services"},
-  {sym:"HDFCBANK",name:"HDFC Bank"},
-  {sym:"ICICIBANK",name:"ICICI Bank"},
-  {sym:"HINDUNILVR",name:"Hindustan Unilever"},
-  {sym:"INFY",name:"Infosys"},
-  {sym:"ITC",name:"ITC"},
-  {sym:"SBIN",name:"State Bank of India"},
-  {sym:"BHARTIARTL",name:"Bharti Airtel"},
-  {sym:"KOTAKBANK",name:"Kotak Mahindra Bank"},
-  {sym:"BAJFINANCE",name:"Bajaj Finance"},
-  {sym:"LICI",name:"Life Insurance Corp"},
-  {sym:"LT",name:"Larsen & Toubro"},
-  {sym:"HCLTECH",name:"HCL Technologies"},
-  {sym:"ASIANPAINT",name:"Asian Paints"},
-  {sym:"AXISBANK",name:"Axis Bank"},
-  {sym:"MARUTI",name:"Maruti Suzuki"},
-  {sym:"SUNPHARMA",name:"Sun Pharmaceutical"},
-  {sym:"TITAN",name:"Titan Company"},
-  {sym:"DMART",name:"Avenue Supermarts"},
-  {sym:"ULTRACEMCO",name:"UltraTech Cement"},
-  {sym:"BAJAJFINSV",name:"Bajaj Finserv"},
-  {sym:"WIPRO",name:"Wipro"},
-  {sym:"ADANIENT",name:"Adani Enterprises"},
-  {sym:"ONGC",name:"Oil & Natural Gas Corp"},
-  {sym:"NTPC",name:"NTPC"},
-  {sym:"JSWSTEEL",name:"JSW Steel"},
-  {sym:"POWERGRID",name:"Power Grid Corp"},
-  {sym:"M&M",name:"Mahindra & Mahindra"},
-  {sym:"ADANIGREEN",name:"Adani Green Energy"},
-  {sym:"ADANIPORTS",name:"Adani Ports & SEZ"},
-  {sym:"COALINDIA",name:"Coal India"},
-  {sym:"TATASTEEL",name:"Tata Steel"},
-  {sym:"HINDZINC",name:"Hindustan Zinc"},
-  {sym:"PIDILITIND",name:"Pidilite Industries"},
-  {sym:"SIEMENS",name:"Siemens India"},
-  {sym:"ADANIENSOL",name:"Adani Energy Solutions"},
-  {sym:"SBILIFE",name:"SBI Life Insurance"},
-  {sym:"IOC",name:"Indian Oil Corp"},
-  {sym:"BAJAJ-AUTO",name:"Bajaj Auto"},
-  {sym:"GRASIM",name:"Grasim Industries"},
-  {sym:"TECHM",name:"Tech Mahindra"},
-  {sym:"HDFCLIFE",name:"HDFC Life Insurance"},
-  {sym:"BRITANNIA",name:"Britannia Industries"},
-  {sym:"VEDL",name:"Vedanta"},
-  {sym:"GODREJCP",name:"Godrej Consumer Products"},
-  {sym:"DABUR",name:"Dabur India"},
-  {sym:"ATGL",name:"Adani Total Gas"},
-  {sym:"SHREECEM",name:"Shree Cement"},
-  {sym:"HAL",name:"Hindustan Aeronautics"},
-  {sym:"HINDALCO",name:"Hindalco Industries"},
-  {sym:"VBL",name:"Varun Beverages"},
-  {sym:"DLF",name:"DLF"},
-  {sym:"BANKBARODA",name:"Bank of Baroda"},
-  {sym:"INDUSINDBK",name:"IndusInd Bank"},
-  {sym:"EICHERMOT",name:"Eicher Motors"},
-  {sym:"DRREDDY",name:"Dr. Reddy's Labs"},
-  {sym:"DIVISLAB",name:"Divi's Laboratories"},
-  {sym:"BPCL",name:"Bharat Petroleum"},
-  {sym:"HAVELLS",name:"Havells India"},
-  {sym:"ADANIPOWER",name:"Adani Power"},
-  {sym:"INDIGO",name:"InterGlobe Aviation"},
-  {sym:"CIPLA",name:"Cipla"},
-  {sym:"AMBUJACEM",name:"Ambuja Cements"},
-  {sym:"SRF",name:"SRF"},
-  {sym:"ABB",name:"ABB India"},
-  {sym:"BEL",name:"Bharat Electronics"},
-  {sym:"SBICARD",name:"SBI Cards"},
-  {sym:"GAIL",name:"GAIL India"},
-  {sym:"BAJAJHLDNG",name:"Bajaj Holdings"},
-  {sym:"TATACONSUM",name:"Tata Consumer Products"},
-  {sym:"ICICIPRULI",name:"ICICI Prudential Life"},
-  {sym:"CHOLAFIN",name:"Cholamandalam Investment"},
-  {sym:"MARICO",name:"Marico"},
-  {sym:"APOLLOHOSP",name:"Apollo Hospitals"},
-  {sym:"TATAPOWER",name:"Tata Power"},
-  {sym:"BOSCHLTD",name:"Bosch"},
-  {sym:"BERGEPAINT",name:"Berger Paints"},
-  {sym:"JINDALSTEL",name:"Jindal Steel & Power"},
-  {sym:"UPL",name:"UPL"},
-  {sym:"AWL",name:"Adani Wilmar"},
-  {sym:"ICICIGI",name:"ICICI Lombard"},
-  {sym:"TORNTPHARM",name:"Torrent Pharmaceuticals"},
-  {sym:"CANBK",name:"Canara Bank"},
-  {sym:"PNB",name:"Punjab National Bank"},
-  {sym:"TVSMOTOR",name:"TVS Motor Company"},
-  {sym:"ZYDUSLIFE",name:"Zydus Lifesciences"},
-  {sym:"TIINDIA",name:"Tube Investments"},
-  {sym:"TRENT",name:"Trent"},
-  {sym:"IDBI",name:"IDBI Bank"},
-  {sym:"NAUKRI",name:"Info Edge India"},
-  {sym:"SHRIRAMFIN",name:"Shriram Finance"},
-  {sym:"HEROMOTOCO",name:"Hero MotoCorp"},
-  {sym:"INDHOTEL",name:"Indian Hotels"},
-  {sym:"PIIND",name:"PI Industries"},
-  {sym:"IRCTC",name:"IRCTC"},
-  {sym:"CGPOWER",name:"CG Power"},
+const FALLBACK_STOCKS = [
+  { sym:"RELIANCE", name:"Reliance Industries" },
+  { sym:"TCS",      name:"Tata Consultancy Services" },
+  { sym:"HDFCBANK", name:"HDFC Bank" },
+  { sym:"INFY",     name:"Infosys" },
+  { sym:"ICICIBANK",name:"ICICI Bank" },
+  { sym:"SBIN",     name:"State Bank of India" },
+  { sym:"ITC",      name:"ITC" },
 ];
 
 /* ================================================================
    HELPERS
    ================================================================ */
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
-const fmtDISO = d => {
-  if (!d) return "";
-  const dt = new Date(d);
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-};
+const fmtDISO = d => { if(!d) return ""; const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
 const fmtN = (v,d=2) => (v==null||isNaN(v)) ? "—" : Number(v).toFixed(d);
 const inr  = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
 
 /* ================================================================
-   YAHOO FINANCE FETCH (with proxy fallback)
+   PROXY FALLBACK
    ================================================================ */
 const PROXIES = [
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
@@ -171,6 +83,77 @@ async function fetchWithFallback(url) {
   throw lastErr || new Error("All proxies failed");
 }
 
+/* ================================================================
+   GOOGLE SHEETS FETCH — "Final List" tab
+   ----------------------------------------------------------------
+   gviz endpoint uses the sheet NAME (not gid), so tab name must match.
+   URL format:
+   https://docs.google.com/spreadsheets/d/{ID}/gviz/tq?tqx=out:json&sheet={NAME}
+   Response wraps JSON in "/*O_o*/\ngoogle.visualization...(...)"
+   ================================================================ */
+async function fetchSheetStocks() {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SHEET_NAME)}`;
+  const res = await fetchWithFallback(url);
+  const text = await res.text();
+
+  // Strip gviz wrapper
+  const m = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
+  const jsonStr = m ? m[1] : text.replace(/^[^{]*/, "");
+  const json = JSON.parse(jsonStr);
+
+  if (json.status === "error") {
+    throw new Error(json.errors?.[0]?.detailed_message || "Sheet error");
+  }
+
+  const cols = json.table.cols.map(c => (c.label || c.id || "").trim());
+  const rows = json.table.rows;
+
+  // Build array of objects
+  const data = rows.map(r => {
+    const o = {};
+    cols.forEach((c, i) => {
+      const cell = r.c[i];
+      o[c] = cell ? (cell.v != null ? cell.v : cell.f) : null;
+    });
+    return o;
+  });
+
+  // Try to auto-detect symbol & name columns
+  const findCol = (...names) => {
+    for (const n of names) {
+      const k = cols.find(c => c.toLowerCase().replace(/\s+/g,"") === n.toLowerCase().replace(/\s+/g,""));
+      if (k) return k;
+    }
+    // partial match
+    for (const n of names) {
+      const k = cols.find(c => c.toLowerCase().includes(n.toLowerCase()));
+      if (k) return k;
+    }
+    return null;
+  };
+
+  const symCol  = findCol("symbol","sym","ticker","stock","scrip","nsecode");
+  const nameCol = findCol("name","company","stockname","description");
+  const suitCol = findCol("suitable","darvas","boh","flag","status");
+
+  if (!symCol) throw new Error(`"Symbol" column नहीं मिला। मिले कॉलम: ${cols.join(", ")}`);
+
+  const stocks = data
+    .map(r => ({
+      sym:  String(r[symCol] || "").trim().toUpperCase().replace(/\.NS$|^NSE:/i, ""),
+      name: String(r[nameCol] || r[symCol] || "").trim(),
+      sheetSuitable: suitCol ? r[suitCol] : null,
+    }))
+    .filter(s => s.sym && /^[A-Z0-9&\-]+$/.test(s.sym));
+
+  if (!stocks.length) throw new Error("Sheet में कोई valid stock नहीं मिला");
+
+  return { stocks, cols, totalRows: rows.length };
+}
+
+/* ================================================================
+   YAHOO OHLC
+   ================================================================ */
 async function fetchYahooOHLC(symbol, range=DEFAULT_RANGE, interval="1d") {
   const ySym = symbol.toUpperCase() + ".NS";
   const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?range=${range}&interval=${interval}`;
@@ -187,39 +170,33 @@ async function fetchYahooOHLC(symbol, range=DEFAULT_RANGE, interval="1d") {
     rows.push({ date:new Date(ts[i]*1000), open:o, high:h, low:l, close:c, vol:v, ts:ts[i]*1000 });
   }
   rows.sort((a,b)=>a.ts-b.ts);
-  if (rows.length < 30) throw new Error("कम data मिला ("+rows.length+" rows)");
+  if (rows.length < 30) throw new Error("कम data ("+rows.length+" rows)");
   return rows;
 }
 
 /* ================================================================
-   RULE 5: BOH FILTER (Bottom Out Hunting)
+   RULE 5: BOH FILTER
    ================================================================ */
 function checkBOH(rows) {
   if (!rows || rows.length < 60) {
     return { suitable:false, reason:"Data kam", cmp:null, high52:null, low52:null, pctFromLow:null, pctFromHigh:null, pct1M:null };
   }
   const last252 = rows.slice(-252);
-  const cmp   = rows[rows.length-1].close;
+  const cmp    = rows[rows.length-1].close;
   const high52 = Math.max(...last252.map(r=>r.high));
   const low52  = Math.min(...last252.map(r=>r.low));
   const pctFromLow  = ((cmp - low52)  / low52)  * 100;
   const pctFromHigh = ((high52 - cmp) / high52) * 100;
-
-  // 1-Month return (~22 trading days)
   const oneMAgo = rows[Math.max(0, rows.length-22)]?.close || cmp;
-  const pct1M = ((cmp - oneMAgo) / oneMAgo) * 100;
+  const pct1M   = ((cmp - oneMAgo) / oneMAgo) * 100;
 
-  // BOH PASS conditions:
-  // - Price at least 5% above 52W low (bottomed out & rising)
-  // - Not more than 45% below 52W high (not in steep crash)
-  // - 1M return > -3% (not actively falling)
   const cond1 = pctFromLow >= 5;
   const cond2 = pctFromHigh <= 45;
   const cond3 = pct1M > -3;
   const suitable = cond1 && cond2 && cond3;
 
   let reason = "PASS";
-  if (!cond1) reason = "52W Low के बहुत करीब";
+  if (!cond1) reason = "52W Low के करीब";
   else if (!cond2) reason = "52W High से बहुत गिरा";
   else if (!cond3) reason = "1M trend negative";
 
@@ -235,8 +212,6 @@ function parseCSV(raw) {
   let hIdx = -1, stockName = "";
   for (let i=0;i<Math.min(lines.length,10);i++) {
     if (/^date/i.test(lines[i])) { hIdx = i; break; }
-    const cell = lines[i].split(",")[0]?.trim();
-    if (cell && !/^\d/.test(cell) && !/\*/.test(cell) && cell.length>1) stockName = cell;
   }
   if (hIdx===-1) return { error:'"Date,Open,High,Low,Close" header नहीं मिला।' };
   const hdr = lines[hIdx].split(",").map(h=>h.trim().toLowerCase());
@@ -273,9 +248,6 @@ function isoWeekKey(d) {
   return t.getFullYear()+"-W"+String(wk).padStart(2,"0");
 }
 
-/* ================================================================
-   DATE RANGE FILTER
-   ================================================================ */
 function filterRowsByDate(rows, fromStr, toStr) {
   if (!fromStr && !toStr) return rows;
   const from = fromStr ? new Date(fromStr + "T00:00:00") : null;
@@ -288,45 +260,27 @@ function filterRowsByDate(rows, fromStr, toStr) {
 }
 
 /* ================================================================
-   CORE BACKTEST ENGINE
-   ----------------------------------------------------------------
-   Implements all 5 rules:
-   1. Capital in 6 parts -> one part per trigger hit
-   2. Buy at Previous-Week High (GTT)
-   3. Skip week if trigger within ±2.75% of last buy
-   4. Exit at avg-price + 6%
-   5. (BOH filter is applied BEFORE feeding data to engine)
+   CORE ENGINE — 5 rules
    ================================================================ */
 function calcWeekly(rows, sourceKey="1w", totalCapital=DEFAULT_CAPITAL) {
   const perPart = totalCapital / PARTS;
-
   const enriched = rows.map(r => ({ ...r, wk: isoWeekKey(r.date), events: [] }));
-
-  // Weekly high / low per ISO week
   const wkHigh = {}, wkLow = {};
   enriched.forEach(r => {
     if (wkHigh[r.wk]==null || r.high>wkHigh[r.wk]) wkHigh[r.wk]=r.high;
     if (wkLow [r.wk]==null || r.low <wkLow [r.wk]) wkLow [r.wk]=r.low;
   });
-
   const wks = [...new Set(enriched.map(r=>r.wk))];
   const lookback = sourceKey === "2w" ? 2 : sourceKey === "4w" ? 4 : 1;
-
-  // Rule 2: Trigger = highest high of previous N-week(s)
   const wkTrigger = {};
   wks.forEach((w,i) => {
     if (i < lookback) { wkTrigger[w] = null; return; }
     let mx = -Infinity;
-    for (let j = i-lookback; j < i; j++) {
-      if (wkHigh[wks[j]] > mx) mx = wkHigh[wks[j]];
-    }
+    for (let j = i-lookback; j < i; j++) if (wkHigh[wks[j]] > mx) mx = wkHigh[wks[j]];
     wkTrigger[w] = mx === -Infinity ? null : mx;
   });
-
   const rowsOut = enriched.map(r => ({ ...r, wkTrigger: wkTrigger[r.wk], buyPrice:null, position:null }));
-
-  let state = "IDLE";
-  let shares=0, cost=0, avg=0, target=0, partsUsed=0;
+  let state="IDLE", shares=0, cost=0, avg=0, target=0, partsUsed=0;
   let lastBuyTrig=null, entryDate=null, entryIdx=-1;
   const trades = [];
   let curWk=null, boughtThisWeek=false, ignoredThisWeek=false, soldThisWeek=false;
@@ -335,83 +289,47 @@ function calcWeekly(rows, sourceKey="1w", totalCapital=DEFAULT_CAPITAL) {
     const r = rowsOut[i];
     const trig = wkTrigger[r.wk];
 
-    // ---- Week boundary ----
     if (r.wk !== curWk) {
-      curWk = r.wk;
-      boughtThisWeek = false;
-      ignoredThisWeek = false;
-      soldThisWeek = false;
-
-      // Rule 3: ±2.75% Ignorable Range check
+      curWk = r.wk; boughtThisWeek=false; ignoredThisWeek=false; soldThisWeek=false;
       if (state==="IN_POSITION" && lastBuyTrig!=null && trig!=null) {
         const diff = Math.abs(trig-lastBuyTrig)/lastBuyTrig;
-        if (diff <= IGNORE_PCT) {
-          ignoredThisWeek = true;
-          r.events.push("ignore");
-        }
+        if (diff <= IGNORE_PCT) { ignoredThisWeek = true; r.events.push("ignore"); }
       }
     }
-
     if (trig == null) continue;
 
-    // ---- Rule 4: Target hit check (before new buy) ----
     if (state==="IN_POSITION" && r.high >= target - 0.0001) {
       const exitPrice = target;
       const pnl = shares*exitPrice - cost;
-      trades.push({
-        entryDate, exitDate: r.date, entry: lastBuyTrig, exit: exitPrice,
-        days: i-entryIdx, shares, cost,
-        proceeds: shares*exitPrice, pnl,
-        pct: (exitPrice/avg-1)*100,
-        partsUsed
-      });
+      trades.push({ entryDate, exitDate:r.date, entry:lastBuyTrig, exit:exitPrice, days:i-entryIdx, shares, cost, proceeds:shares*exitPrice, pnl, pct:(exitPrice/avg-1)*100, partsUsed });
       r.events.push("target");
       state="IDLE"; shares=0; cost=0; avg=0; target=0; partsUsed=0;
-      lastBuyTrig=null; entryDate=null; entryIdx=-1;
-      soldThisWeek = true;
+      lastBuyTrig=null; entryDate=null; entryIdx=-1; soldThisWeek=true;
       continue;
     }
 
-    // ---- Rule 1 + 2 + 3: Buy one part on trigger hit ----
     const canBuy = !boughtThisWeek && !ignoredThisWeek && !soldThisWeek
                    && partsUsed < PARTS
                    && r.low <= trig && trig <= r.high;
 
     if (canBuy) {
-      // Rule 1: allocate exactly ONE PART of capital
       let qty = Math.floor(perPart / trig);
-      if (qty < 1) qty = 1;   // minimum 1 share
-
-      shares += qty;
-      cost   += qty * trig;
-      avg     = cost / shares;
-      target  = avg * (1 + TARGET_PCT);   // Rule 4
+      if (qty < 1) qty = 1;
+      shares += qty; cost += qty*trig; avg = cost/shares;
+      target = avg*(1+TARGET_PCT);
       partsUsed++;
-
       if (state==="IDLE") { entryDate = r.date; entryIdx = i; }
-      state = "IN_POSITION";
-      lastBuyTrig = trig;
-      boughtThisWeek = true;
-
-      r.events.push("buy");
-      r.buyPrice = trig;
+      state="IN_POSITION"; lastBuyTrig=trig; boughtThisWeek=true;
+      r.events.push("buy"); r.buyPrice=trig;
       r.position = { avg, target, shares, qty, partsUsed };
 
-      // Same-day target hit?
       if (r.high >= target - 0.0001) {
         const exitPrice = target;
         const pnl = shares*exitPrice - cost;
-        trades.push({
-          entryDate, exitDate: r.date, entry: trig, exit: exitPrice,
-          days: i-entryIdx, shares, cost,
-          proceeds: shares*exitPrice, pnl,
-          pct: (exitPrice/avg-1)*100,
-          partsUsed
-        });
+        trades.push({ entryDate, exitDate:r.date, entry:trig, exit:exitPrice, days:i-entryIdx, shares, cost, proceeds:shares*exitPrice, pnl, pct:(exitPrice/avg-1)*100, partsUsed });
         r.events.push("target");
         state="IDLE"; shares=0; cost=0; avg=0; target=0; partsUsed=0;
-        lastBuyTrig=null; entryDate=null; entryIdx=-1;
-        soldThisWeek = true;
+        lastBuyTrig=null; entryDate=null; entryIdx=-1; soldThisWeek=true;
       }
     }
   }
@@ -419,24 +337,17 @@ function calcWeekly(rows, sourceKey="1w", totalCapital=DEFAULT_CAPITAL) {
   let openPosition = null;
   if (state==="IN_POSITION") {
     const last = rowsOut[rowsOut.length-1];
-    openPosition = {
-      shares, avg, target, lastBuyTrig, entryDate,
-      mark: last.close,
-      unrealized: shares*last.close - cost,
-      cost, partsUsed
-    };
+    openPosition = { shares, avg, target, lastBuyTrig, entryDate, mark:last.close, unrealized:shares*last.close-cost, cost, partsUsed };
   }
-
   const lastWk = wks[wks.length-1];
-  const pendingTrigger = wkHigh[lastWk];   // next week's trigger
-
-  return { rows: rowsOut, trades, openPosition, pendingTrigger, perPart };
+  const pendingTrigger = wkHigh[lastWk];
+  return { rows:rowsOut, trades, openPosition, pendingTrigger, perPart };
 }
 
 /* ================================================================
-   MINI CHART
+   CHART (compact)
    ================================================================ */
-function MiniChart({ rows, sourceLabel="1W", height=300 }) {
+function MiniChart({ rows, sourceLabel="1W", height=280 }) {
   const [hover, setHover] = useState(null);
   const W=800, H=height, PAD={l:54,r:10,t:20,b:30};
   const iw=W-PAD.l-PAD.r, ih=H-PAD.t-PAD.b;
@@ -448,11 +359,9 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   const x = ts => PAD.l + ((ts-minT)/(maxT-minT))*iw;
   const y = v => PAD.t + ih - ((v-minV)/range)*ih;
   const line = k => rows.map((r,i)=>`${i?'L':'M'}${x(r.ts).toFixed(1)},${y(r[k]).toFixed(1)}`).join(' ');
-  const yticks=5;
-  const yLabels=Array.from({length:yticks+1},(_,i)=>minV+(range*i/yticks));
-  const xticks=Math.min(6,rows.length);
-  const xIdx=Array.from({length:xticks},(_,i)=>Math.floor(i*(rows.length-1)/(xticks-1||1)));
-
+  const yLabels = Array.from({length:6},(_,i)=>minV+(range*i/5));
+  const xticks = Math.min(6,rows.length);
+  const xIdx = Array.from({length:xticks},(_,i)=>Math.floor(i*(rows.length-1)/(xticks-1||1)));
   const trigSegs=[]; let cur=null;
   rows.forEach(r=>{
     const t=r.wkTrigger; if(t==null) return;
@@ -460,7 +369,6 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
     else cur.x2=x(r.ts);
   });
   if(cur)trigSegs.push(cur);
-
   return (
     <div style={{overflowX:"auto"}}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",minWidth:340,height:H,display:"block"}} onMouseLeave={()=>setHover(null)}>
@@ -488,92 +396,84 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
         <div style={{background:"#0f1e33",border:"1px solid #2a3f5f",borderRadius:8,padding:"8px 12px",fontSize:11,lineHeight:1.7,fontFamily:"monospace",margin:"4px 10px"}}>
           <div style={{fontWeight:700,color:"#a0bde0"}}>{fmtD(hover.date)}</div>
           <div style={{color:"#60a5fa"}}>Close: ₹{fmtN(hover.close)}</div>
-          {hover.wkTrigger && <div style={{color:"#fbbf24"}}>Trigger ({sourceLabel}): ₹{fmtN(hover.wkTrigger)}</div>}
-          {hover.events?.includes("ignore") && <div style={{color:"#64748b",fontWeight:700}}>⚠ IGNORED (±2.75%)</div>}
+          {hover.wkTrigger && <div style={{color:"#fbbf24"}}>Trigger: ₹{fmtN(hover.wkTrigger)}</div>}
+          {hover.events?.includes("ignore") && <div style={{color:"#64748b",fontWeight:700}}>⚠ IGNORED</div>}
           {hover.events?.includes("buy") && <div style={{color:"#4ade80",fontWeight:700}}>✅ BUY {hover.position?.qty} sh @ ₹{fmtN(hover.buyPrice)}</div>}
-          {hover.position && !hover.events?.includes("target") && <div style={{color:"#93c5fd"}}>🎯 Target ₹{fmtN(hover.position.target)} · Parts {hover.position.partsUsed}/6</div>}
+          {hover.position && !hover.events?.includes("target") && <div style={{color:"#93c5fd"}}>🎯 ₹{fmtN(hover.position.target)} · Parts {hover.position.partsUsed}/6</div>}
           {hover.events?.includes("target") && <div style={{color:"#a855f7",fontWeight:700}}>🎯 TARGET HIT</div>}
         </div>
       )}
-      <div style={{padding:"4px 14px",fontSize:11,color:"#64748b"}}>
-        <span style={{color:"#60a5fa"}}>━ Close</span> &nbsp;
-        <span style={{color:"#fbbf24"}}>┄ {sourceLabel} Trigger</span> &nbsp;
-        <span style={{color:"#4ade80"}}>● Buy</span> &nbsp;
-        <span style={{color:"#a855f7"}}>● Target</span>
-      </div>
     </div>
   );
 }
 
 /* ================================================================
-   STOCKS LIST MODAL (with live BOH badge)
+   STOCKS MODAL (uses sheet-driven list)
    ================================================================ */
-function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress, bohCache, totalCapital }) {
+function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress, bohCache, totalCapital, stockList, sheetInfo, reloadSheet }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
 
-  const enriched = STOCKS_DB.map(s => {
-    const boh = bohCache[s.sym];
-    return { ...s, boh };
-  });
-
+  const enriched = stockList.map(s => ({ ...s, boh: bohCache[s.sym] }));
   const filtered = enriched.filter(s => {
     if (filter === "S" && !(s.boh?.suitable)) return false;
     if (filter === "A" && s.boh?.suitable) return false;
     if (filter === "?" && s.boh) return false;
     if (!q) return true;
     const ql = q.toLowerCase();
-    return s.sym.toLowerCase().includes(ql) || s.name.toLowerCase().includes(ql);
+    return s.sym.toLowerCase().includes(ql) || (s.name||"").toLowerCase().includes(ql);
   });
-
   const sCount = enriched.filter(s=>s.boh?.suitable).length;
   const aCount = enriched.filter(s=>s.boh && !s.boh.suitable).length;
   const uCount = enriched.filter(s=>!s.boh).length;
 
-  const C = {
-    bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb",
-    muted:"#64748b", text:"#dce8f8", suit:"#4ade80", avoid:"#f87171"
-  };
+  const C = { bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb", muted:"#64748b", text:"#dce8f8", suit:"#4ade80", avoid:"#f87171" };
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"flex-end",zIndex:200}}
       onClick={e=>e.currentTarget===e.target && onClose()}>
       <div style={{background:"#0d1a2a",borderTop:`1px solid ${C.border}`,borderRadius:"18px 18px 0 0",padding:16,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div>
-            <div style={{fontWeight:700,fontSize:16}}>📋 Stocks List</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:16}}>📋 Final List (Google Sheet)</div>
             <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-              {STOCKS_DB.length} stocks · <span style={{color:C.suit}}>{sCount} Suitable</span> · <span style={{color:C.avoid}}>{aCount} Avoid</span> · <span style={{color:C.muted}}>{uCount} unchecked</span>
+              {stockList.length} stocks · <span style={{color:C.suit}}>{sCount} Suitable</span> · <span style={{color:C.avoid}}>{aCount} Avoid</span> · {uCount} unchecked
             </div>
             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-              💰 Per part: ₹{inr(totalCapital/PARTS)} (capital ₹{inr(totalCapital)} ÷ 6)
+              💰 Per part: ₹{inr(totalCapital/PARTS)}
             </div>
           </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>×</button>
         </div>
 
-        <button onClick={autoLoadAll} disabled={!!autoProgress}
-          style={{
-            background: autoProgress ? "#1e3352" : "linear-gradient(135deg,#2563eb,#7c3aed)",
-            color:"#fff", border:"none", borderRadius:10, padding:"10px 14px",
-            fontSize:13, fontWeight:700, cursor: autoProgress ? "wait" : "pointer",
-            marginBottom:10, width:"100%"
-          }}>
-          {autoProgress
-            ? `⏳ Loading ${autoProgress.done}/${autoProgress.total} — ${autoProgress.current}...`
-            : `🚀 Auto-load ${sCount>0 ? `${sCount} Suitable` : "& check BOH"} stocks`}
-        </button>
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          <button onClick={reloadSheet} disabled={!!sheetInfo?.loading}
+            style={{
+              flex:1, background: sheetInfo?.loading ? "#1e3352" : "#1e3a5f",
+              color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8,
+              padding:"8px 12px", fontSize:12, fontWeight:600,
+              cursor: sheetInfo?.loading ? "wait" : "pointer"
+            }}>
+            {sheetInfo?.loading ? "⟳ Loading sheet..." : "🔄 Reload from Sheet"}
+          </button>
+          <button onClick={autoLoadAll} disabled={!!autoProgress}
+            style={{
+              flex:2, background: autoProgress ? "#1e3352" : "linear-gradient(135deg,#2563eb,#7c3aed)",
+              color:"#fff", border:"none", borderRadius:8,
+              padding:"8px 14px", fontSize:12, fontWeight:700,
+              cursor: autoProgress ? "wait" : "pointer"
+            }}>
+            {autoProgress
+              ? `⏳ ${autoProgress.done}/${autoProgress.total} — ${autoProgress.current}...`
+              : `🚀 Fetch & BOH-check all ${stockList.length}`}
+          </button>
+        </div>
 
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search: RELIANCE, INFY..."
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search symbol / name..."
           style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",outline:"none",marginBottom:8}}/>
 
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-          {[
-            ["all","All",STOCKS_DB.length],
-            ["S","✅ Suitable",sCount],
-            ["A","⛔ Avoid",aCount],
-            ["?","❓ Unchecked",uCount],
-          ].map(([k,l,n])=>(
+          {[["all","All",stockList.length],["S","✅ Suitable",sCount],["A","⛔ Avoid",aCount],["?","❓ Unchecked",uCount]].map(([k,l,n])=>(
             <button key={k} onClick={()=>setFilter(k)} style={{
               background: filter===k ? C.accent : "none",
               color: filter===k ? "#fff" : C.muted,
@@ -606,13 +506,9 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
                   {boh && boh.cmp && (
                     <div style={{display:"flex",gap:12,marginTop:5,fontSize:11,color:"#94a3b8",flexWrap:"wrap"}}>
                       <span>CMP: <b style={{color:"#e2e8f0"}}>₹{inr(boh.cmp)}</b></span>
-                      <span>52L: <b style={{color:C.suit}}>₹{inr(boh.low52)}</b> <span style={{color:C.muted}}>(+{boh.pctFromLow.toFixed(1)}%)</span></span>
-                      <span>52H: <b style={{color:C.avoid}}>₹{inr(boh.high52)}</b> <span style={{color:C.muted}}>(-{boh.pctFromHigh.toFixed(1)}%)</span></span>
-                      <span>1M: <b style={{color: boh.pct1M>=0 ? C.suit : C.avoid}}>{boh.pct1M.toFixed(1)}%</b></span>
+                      <span>52L: <b style={{color:C.suit}}>₹{inr(boh.low52)}</b> (+{boh.pctFromLow.toFixed(1)}%)</span>
+                      <span>52H: <b style={{color:C.avoid}}>₹{inr(boh.high52)}</b> (-{boh.pctFromHigh.toFixed(1)}%)</span>
                     </div>
-                  )}
-                  {boh && !boh.suitable && boh.reason && boh.reason!=="PASS" && (
-                    <div style={{fontSize:10,color:C.avoid,marginTop:3}}>⛔ {boh.reason}</div>
                   )}
                 </div>
                 <div style={{color:"#334a6a",fontSize:18}}>{isLoading?"⟳":"›"}</div>
@@ -629,6 +525,9 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
    MAIN APP
    ================================================================ */
 function App() {
+  const [stockList, setStockList] = useState([]);
+  const [sheetInfo, setSheetInfo] = useState({ loading:true, error:null, cols:[], source:"sheet" });
+
   const [stocks, setStocks] = useState([]);
   const [active, setActive] = useState(0);
   const [modal, setModal] = useState(false);
@@ -645,66 +544,57 @@ function App() {
   const [totalCapital, setTotalCapital] = useState(DEFAULT_CAPITAL);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [bohCache, setBohCache] = useState({});   // symbol -> BOH result
+  const [bohCache, setBohCache] = useState({});
 
   function showToast(msg, type="info") {
     setToast({msg, type});
-    setTimeout(()=>setToast(null), 3000);
+    setTimeout(()=>setToast(null), 3500);
   }
 
-  /* ------ Recompute all loaded stocks (source / capital / date change) ------ */
+  /* ---- Sheet loading ---- */
+  async function loadSheet() {
+    setSheetInfo(prev => ({ ...prev, loading:true, error:null }));
+    try {
+      const { stocks: list, cols } = await fetchSheetStocks();
+      setStockList(list);
+      setSheetInfo({ loading:false, error:null, cols, source:"sheet" });
+      showToast(`✅ Sheet loaded: ${list.length} stocks`, "success");
+    } catch (e) {
+      console.error("Sheet fetch failed:", e);
+      setStockList(FALLBACK_STOCKS);
+      setSheetInfo({ loading:false, error:e.message, cols:[], source:"fallback" });
+      showToast(`⚠ Sheet fail: ${e.message}. Fallback use ho raha hai.`, "error");
+    }
+  }
+
+  useEffect(() => { loadSheet(); }, []);
+
+  /* ---- Recompute ---- */
   function recomputeAll(newSource, newFrom, newTo, newCapital) {
     setStocks(prev => prev.map(s => {
       if (!s.rawRows) return s;
       const filtered = filterRowsByDate(s.rawRows, newFrom, newTo);
-      if (filtered.length < 5) {
-        return { name:s.name, rawRows:s.rawRows, rows:[], trades:[], openPosition:null, pendingTrigger:null };
-      }
+      if (filtered.length < 5) return { name:s.name, rawRows:s.rawRows, rows:[], trades:[], openPosition:null, pendingTrigger:null };
       const res = calcWeekly(filtered, newSource, newCapital);
-      return { name:s.name, rawRows:s.rawRows, ...res };
+      return { name:s.name, rawRows:s.rawRows, ...res, boh:s.boh };
     }));
   }
+  function changeTriggerSource(ns) { setTriggerSource(ns); recomputeAll(ns, dateFrom, dateTo, totalCapital); }
+  function changeCapital(nc) { setTotalCapital(nc); recomputeAll(triggerSource, dateFrom, dateTo, nc); }
+  function applyDateRange() { recomputeAll(triggerSource, dateFrom, dateTo, totalCapital); showToast(`📅 Range applied`, "success"); }
+  function resetDateRange() { setDateFrom(""); setDateTo(""); recomputeAll(triggerSource, "", "", totalCapital); }
 
-  function changeTriggerSource(newSource) {
-    setTriggerSource(newSource);
-    recomputeAll(newSource, dateFrom, dateTo, totalCapital);
-    const lbl = TRIGGER_SOURCES.find(t=>t.key===newSource)?.label || newSource;
-    showToast(`✅ Trigger: ${lbl}`, "success");
-  }
-
-  function changeCapital(newCapital) {
-    setTotalCapital(newCapital);
-    recomputeAll(triggerSource, dateFrom, dateTo, newCapital);
-  }
-
-  function applyDateRange() {
-    recomputeAll(triggerSource, dateFrom, dateTo, totalCapital);
-    showToast(`📅 Date range: ${dateFrom||"start"} → ${dateTo||"end"}`, "success");
-  }
-
-  function resetDateRange() {
-    setDateFrom(""); setDateTo("");
-    recomputeAll(triggerSource, "", "", totalCapital);
-    showToast(`📅 Date filter reset`, "success");
-  }
-
-  /* ------ Add stock with auto-fetch + BOH check ------ */
+  /* ---- Add stock ---- */
   async function addStockAuto(stock, skipBOH=false) {
     setLoadingSym(stock.sym);
     try {
       const rawRows = await fetchYahooOHLC(stock.sym, range);
-
-      // Rule 5: BOH filter
       const boh = checkBOH(rawRows);
       setBohCache(prev => ({ ...prev, [stock.sym]: boh }));
 
-      if (!skipBOH && !boh.suitable) {
-        showToast(`⚠ ${stock.sym} BOH fail: ${boh.reason}`, "error");
-      } else if (!skipBOH) {
-        showToast(`✅ ${stock.sym} BOH pass · ${rawRows.length} days`, "success");
-      } else {
-        showToast(`✅ ${stock.sym} loaded (BOH skipped) · ${rawRows.length} days`, "success");
-      }
+      if (!skipBOH && !boh.suitable) showToast(`⚠ ${stock.sym}: ${boh.reason}`, "error");
+      else if (!skipBOH)                showToast(`✅ ${stock.sym} loaded (BOH pass)`, "success");
+      else                              showToast(`✅ ${stock.sym} loaded (BOH skipped)`, "success");
 
       const filtered = filterRowsByDate(rawRows, dateFrom, dateTo);
       const res = calcWeekly(filtered, triggerSource, totalCapital);
@@ -713,14 +603,10 @@ function App() {
         const name = "NSE:"+stock.sym;
         const idx = p.findIndex(x => x.name === name);
         const newStock = { name, rawRows, ...res, boh };
-        const next = idx >= 0
-          ? p.map((x,j)=> j===idx ? newStock : x)
-          : [...p, newStock];
-        // set active properly (inside updater to avoid stale)
+        const next = idx >= 0 ? p.map((x,j)=> j===idx ? newStock : x) : [...p, newStock];
         setActive(idx >= 0 ? idx : next.length-1);
         return next;
       });
-
       setLoadingSym(null);
       return true;
     } catch (e) {
@@ -729,34 +615,31 @@ function App() {
       return false;
     }
   }
-
   async function pickFromList(stock) {
     const ok = await addStockAuto(stock);
     if (ok) setListOpen(false);
   }
 
-  /* ------ Load all stocks + auto-check BOH ------ */
+  /* ---- Auto-load ALL ---- */
   async function autoLoadAll() {
-    // Pass 1: fetch all + BOH check
-    setAutoProgress({ done:0, total: STOCKS_DB.length, current:"" });
+    const list = stockList;
+    if (!list.length) { showToast("Sheet खाली है — पहले reload करें", "error"); return; }
+    setAutoProgress({ done:0, total:list.length, current:"" });
     const allData = [];
-    for (let i=0; i<STOCKS_DB.length; i++) {
-      const st = STOCKS_DB[i];
-      setAutoProgress({ done:i, total:STOCKS_DB.length, current: st.sym });
+    for (let i=0; i<list.length; i++) {
+      const st = list[i];
+      setAutoProgress({ done:i, total:list.length, current: st.sym });
       try {
         const rawRows = await fetchYahooOHLC(st.sym, range);
         const boh = checkBOH(rawRows);
-        allData.push({ sym: st.sym, rawRows, boh });
+        allData.push({ sym:st.sym, rawRows, boh });
       } catch (e) { /* skip */ }
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 120));
     }
-
-    // Update bohCache
     const newCache = {};
     allData.forEach(d => { newCache[d.sym] = d.boh; });
     setBohCache(prev => ({ ...prev, ...newCache }));
 
-    // Pass 2: only load suitable stocks into main view
     const suitable = allData.filter(d => d.boh.suitable);
     const newStocks = suitable.map(d => ({
       name: "NSE:"+d.sym,
@@ -764,7 +647,6 @@ function App() {
       ...calcWeekly(filterRowsByDate(d.rawRows, dateFrom, dateTo), triggerSource, totalCapital),
       boh: d.boh
     }));
-
     setStocks(prev => {
       const merged = [...prev];
       newStocks.forEach(ns => {
@@ -774,12 +656,12 @@ function App() {
       return merged;
     });
     setAutoProgress(null);
-    showToast(`🚀 ${suitable.length} BOH-suitable stocks loaded (out of ${allData.length} fetched)`, "success");
+    showToast(`🚀 ${suitable.length}/${allData.length} BOH-suitable stocks loaded`, "success");
     setListOpen(false);
     setActive(0);
   }
 
-  /* ------ CSV add ------ */
+  /* ---- CSV add ---- */
   function handleAdd(csvRaw, lbl) {
     setErr("");
     const parsed = parseCSV(csvRaw);
@@ -788,58 +670,41 @@ function App() {
     const filtered = filterRowsByDate(parsed.rows, dateFrom, dateTo);
     const res = calcWeekly(filtered, triggerSource, totalCapital);
     const name = lbl?.trim() || parsed.stockName || `Stock ${stocks.length+1}`;
-    setStocks(p => [...p, { name, rawRows: parsed.rows, ...res, boh }]);
+    setStocks(p => [...p, { name, rawRows:parsed.rows, ...res, boh }]);
     setActive(stocks.length);
     return true;
   }
-  function submitAdd() {
-    if (handleAdd(csvTxt, label)) {
-      setCsvTxt(""); setLabel(""); setModal(false);
-    }
-  }
-  function removeStock(idx) {
-    setStocks(p => p.filter((_,i)=>i!==idx));
-    setActive(a => Math.max(0, a>=idx ? a-1 : a));
-  }
+  function submitAdd() { if (handleAdd(csvTxt, label)) { setCsvTxt(""); setLabel(""); setModal(false); } }
+  function removeStock(idx) { setStocks(p=>p.filter((_,i)=>i!==idx)); setActive(a=>Math.max(0, a>=idx ? a-1 : a)); }
   function onFile(e) {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    const f = e.target.files?.[0]; if (!f) return;
     const rd = new FileReader();
     rd.onload = ev => setCsvTxt(ev.target.result);
     rd.readAsText(f);
   }
 
-  /* ------ Export CSV ------ */
+  /* ---- Export ---- */
   function exportTradesCSV() {
     if (!stocks.length) { showToast("कोई stock loaded नहीं", "error"); return; }
     const lines = [];
     lines.push("# Darvas Box Weekly Trigger Export");
     lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
-    lines.push(`# Trigger: ${TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label}`);
+    lines.push(`# Source: ${sheetInfo.source === "sheet" ? "Google Sheet — "+SHEET_NAME : "Fallback list"}`);
     lines.push(`# Capital: ₹${totalCapital} (per part ₹${totalCapital/PARTS})`);
-    lines.push(`# Target: ${(TARGET_PCT*100).toFixed(1)}% | Ignore: ±${(IGNORE_PCT*100).toFixed(2)}%`);
     lines.push("");
     lines.push("Stock,Entry Date,Exit Date,Buy Price,Exit Price,Qty,Parts,Held Days,P&L,Return %");
-    let gP=0, gT=0, gW=0;
+    let gP=0,gT=0,gW=0;
     stocks.forEach(s => (s.trades||[]).forEach(t => {
       gP+=t.pnl; gT++; if(t.pnl>0) gW++;
-      lines.push([
-        s.name, fmtDISO(t.entryDate), fmtDISO(t.exitDate),
-        t.entry.toFixed(2), t.exit.toFixed(2), t.shares, t.partsUsed||"", t.days,
-        t.pnl.toFixed(2), t.pct.toFixed(2)
-      ].join(","));
+      lines.push([s.name, fmtDISO(t.entryDate), fmtDISO(t.exitDate), t.entry.toFixed(2), t.exit.toFixed(2), t.shares, t.partsUsed||"", t.days, t.pnl.toFixed(2), t.pct.toFixed(2)].join(","));
     }));
     lines.push(""); lines.push("SUMMARY");
-    lines.push(`Total Stocks,${stocks.length}`);
-    lines.push(`Total Trades,${gT}`);
-    lines.push(`Wins,${gW}`);
-    lines.push(`Win Rate,${gT?((gW/gT)*100).toFixed(2):0}%`);
-    lines.push(`Total P&L,${gP.toFixed(2)}`);
+    lines.push(`Total Stocks,${stocks.length}`); lines.push(`Total Trades,${gT}`); lines.push(`Wins,${gW}`);
+    lines.push(`Win Rate,${gT?((gW/gT)*100).toFixed(2):0}%`); lines.push(`Total P&L,${gP.toFixed(2)}`);
 
     const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `trades_${fmtDISO(new Date())}.csv`;
+    const a = document.createElement("a"); a.href = url; a.download = `trades_${fmtDISO(new Date())}.csv`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showToast(`📥 CSV exported (${gT} trades)`, "success");
@@ -847,36 +712,32 @@ function App() {
 
   const s = stocks[active];
   const last = s?.rows?.[s.rows.length-1];
-  const C = {
-    bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb",
-    dim:"#4a6fa5", muted:"#64748b",
-    buy:"#4ade80", buyBg:"rgba(74,222,128,0.08)",
-    gtt:"#fbbf24", gttBg:"rgba(251,191,36,0.08)",
-    tgt:"#a855f7", tgtBg:"rgba(168,85,247,0.08)",
-    text:"#dce8f8",
-  };
+  const C = { bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb", dim:"#4a6fa5", muted:"#64748b", buy:"#4ade80", buyBg:"rgba(74,222,128,0.08)", gtt:"#fbbf24", tgt:"#a855f7", tgtBg:"rgba(168,85,247,0.08)", text:"#dce8f8" };
   const card = (sx={}) => ({ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, ...sx });
-  const views = [
-    { key:"chart",  lbl:"📊 Chart" },
-    { key:"trades", lbl:"💼 Trades" },
-    { key:"log",    lbl:"📜 Event Log" },
-    { key:"table",  lbl:"📋 Table" },
-  ];
+  const views = [{key:"chart",lbl:"📊 Chart"},{key:"trades",lbl:"💼 Trades"},{key:"log",lbl:"📜 Log"},{key:"table",lbl:"📋 Table"}];
   const events = s ? s.rows.filter(r => r.events?.length) : [];
   const totalPnL = s ? s.trades.reduce((a,t)=>a+t.pnl,0) : 0;
   const wins = s ? s.trades.filter(t=>t.pnl>0).length : 0;
   const sourceLabel = TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label.split(" ")[0] || "1W";
-
   const portfolioTrades = stocks.reduce((a,s)=>a+(s.trades?.length||0),0);
   const portfolioPnl = stocks.reduce((a,s)=>a+((s.trades||[]).reduce((x,t)=>x+t.pnl,0)),0);
 
   return (
-    <div style={{ fontFamily:"'Inter',system-ui,sans-serif", background:C.bg, color:C.text, minHeight:"100vh", fontSize:14 }}>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif", background:C.bg, color:C.text, minHeight:"100vh", fontSize:14}}>
       {/* Header */}
-      <div style={{ background:C.card, padding:"10px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
-        <div style={{ flex:1, minWidth:140 }}>
-          <span style={{ fontWeight:700, fontSize:15 }}>📈 Darvas Box Backtest</span>
-          <span style={{ fontSize:10, color:C.muted, marginLeft:8 }}>5 Rules · BOH · 6 Parts</span>
+      <div style={{background:C.card, padding:"10px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap"}}>
+        <div style={{flex:1, minWidth:160}}>
+          <span style={{fontWeight:700, fontSize:15}}>📈 Darvas Box Backtest</span>
+          <span style={{
+            marginLeft:8, fontSize:10, padding:"2px 8px", borderRadius:20, fontWeight:700,
+            background: sheetInfo.source==="sheet" ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",
+            color: sheetInfo.source==="sheet" ? C.buy : "#f87171",
+            border: `1px solid ${sheetInfo.source==="sheet" ? "#166534" : "#7f1d1d"}`
+          }}>
+            {sheetInfo.loading ? "⟳ Loading sheet..." :
+             sheetInfo.source==="sheet" ? `✓ Sheet: ${SHEET_NAME} (${stockList.length})` :
+             `⚠ Fallback (${stockList.length})`}
+          </span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:5,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px"}}>
           <span style={{fontSize:11,color:C.muted}}>💰 ₹</span>
@@ -887,84 +748,81 @@ function App() {
           <span style={{fontSize:10,color:C.gtt}}>÷6 = ₹{inr(totalCapital/PARTS)}</span>
         </div>
         <select value={triggerSource} onChange={e=>changeTriggerSource(e.target.value)}
-          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
+          style={{background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none"}}>
           {TRIGGER_SOURCES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
         <select value={range} onChange={e=>setRange(e.target.value)}
-          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
-          <option value="6mo">6M</option>
-          <option value="1y">1Y</option>
-          <option value="2y">2Y</option>
-          <option value="5y">5Y</option>
+          style={{background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none"}}>
+          <option value="6mo">6M</option><option value="1y">1Y</option><option value="2y">2Y</option><option value="5y">5Y</option>
         </select>
         <button onClick={()=>setListOpen(true)}
-          style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
-          📋 Stocks
+          style={{background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer"}}>
+          📋 Stocks ({stockList.length})
         </button>
         <button onClick={()=>setModal(true)}
-          style={{ background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+          style={{background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer"}}>
           + CSV
         </button>
       </div>
 
-      {/* Date range row */}
-      <div style={{ background:"#0a1628", padding:"8px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
-        <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>📅 Date:</span>
-        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
-          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 8px", fontSize:12, outline:"none" }}/>
-        <span style={{ color:C.muted, fontSize:12 }}>→</span>
-        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
-          style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 8px", fontSize:12, outline:"none" }}/>
-        <button onClick={applyDateRange}
-          style={{ background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"5px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
-          Apply
+      {/* Sheet error banner */}
+      {sheetInfo.error && (
+        <div style={{background:"#7f1d1d", color:"#fecaca", padding:"8px 16px", fontSize:12, borderBottom:`1px solid #991b1b`}}>
+          ⚠ Sheet fetch fail: <b>{sheetInfo.error}</b> — Fallback list use हो रही है। Sheet को <b>"Anyone with the link → Viewer"</b> पर सेट करें, फिर Reload दबाएँ।
+        </div>
+      )}
+
+      {/* Date row */}
+      <div style={{background:"#0a1628", padding:"8px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap"}}>
+        <span style={{fontSize:11, color:C.muted, fontWeight:600}}>📅 Date:</span>
+        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 8px",fontSize:12,outline:"none"}}/>
+        <span style={{color:C.muted, fontSize:12}}>→</span>
+        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 8px",fontSize:12,outline:"none"}}/>
+        <button onClick={applyDateRange} style={{background:C.accent,color:"#fff",border:"none",borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Apply</button>
+        {(dateFrom||dateTo) && <button onClick={resetDateRange} style={{background:"none",color:C.muted,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>✕ Reset</button>}
+        <div style={{flex:1}}/>
+        <button onClick={loadSheet} disabled={sheetInfo.loading}
+          style={{background:"#1e3a5f", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 12px", fontSize:12, fontWeight:600, cursor: sheetInfo.loading?"wait":"pointer"}}>
+          {sheetInfo.loading ? "⟳" : "🔄 Sheet"}
         </button>
-        {(dateFrom || dateTo) && (
-          <button onClick={resetDateRange}
-            style={{ background:"none", color:C.muted, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>
-            ✕ Reset
-          </button>
-        )}
-        <div style={{ flex:1 }}/>
         {stocks.length > 0 && (
           <button onClick={exportTradesCSV}
-            style={{ background:"linear-gradient(135deg,#16a34a,#22c55e)", color:"#fff", border:"none", borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
-            📥 Export CSV
+            style={{background:"linear-gradient(135deg,#16a34a,#22c55e)", color:"#fff", border:"none", borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer"}}>
+            📥 Export
           </button>
         )}
       </div>
 
       {autoProgress && (
         <div style={{background:"#1e3352",padding:"8px 16px",fontSize:12,color:"#93c5fd",borderBottom:`1px solid ${C.border}`}}>
-          ⏳ Auto-loading {autoProgress.done}/{autoProgress.total} — {autoProgress.current}
+          ⏳ Fetching {autoProgress.done}/{autoProgress.total} — {autoProgress.current}
           <div style={{background:"#0d1a2a",height:4,borderRadius:2,marginTop:6,overflow:"hidden"}}>
             <div style={{background:C.accent,height:"100%",width:`${(autoProgress.done/autoProgress.total)*100}%`,transition:"width 0.3s"}}/>
           </div>
         </div>
       )}
 
-      {/* Stock tabs */}
+      {/* Tabs */}
       {stocks.length>0 && (
-        <div style={{ display:"flex", overflowX:"auto", background:C.card, borderBottom:`1px solid ${C.border}`, padding:"0 8px" }}>
+        <div style={{display:"flex", overflowX:"auto", background:C.card, borderBottom:`1px solid ${C.border}`, padding:"0 8px"}}>
           {stocks.map((st,i)=>(
-            <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
               <button onClick={()=>setActive(i)} style={{
-                background:"none", border:"none",
+                background:"none",border:"none",
                 borderBottom: active===i ? `2px solid ${C.accent}` : "2px solid transparent",
                 color: active===i ? "#93c5fd" : C.muted,
-                padding:"9px 10px", fontSize:12, fontWeight: active===i ? 700 : 400,
-                cursor:"pointer", whiteSpace:"nowrap"
+                padding:"9px 10px",fontSize:12,fontWeight: active===i ? 700 : 400,
+                cursor:"pointer",whiteSpace:"nowrap"
               }}>
                 {st.name.replace("NSE:","")}
-                {st.boh?.suitable && <span style={{color:C.buy, marginLeft:4, fontSize:9}}>●</span>}
+                {st.boh?.suitable && <span style={{color:C.buy,marginLeft:4,fontSize:9}}>●</span>}
               </button>
-              <button onClick={()=>removeStock(i)}
-                style={{ background:"none", border:"none", color:C.muted, cursor:"pointer", fontSize:14, padding:"0 4px 0 0", lineHeight:1 }}>×</button>
+              <button onClick={()=>removeStock(i)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,padding:"0 4px 0 0",lineHeight:1}}>×</button>
             </div>
           ))}
           {stocks.length > 1 && (
-            <div style={{ marginLeft:"auto", padding:"9px 12px", fontSize:11, color:C.muted, whiteSpace:"nowrap", borderLeft:`1px solid ${C.border}` }}>
-              📊 {stocks.length} stocks · ₹{inr(portfolioPnl)} · {portfolioTrades} trades
+            <div style={{marginLeft:"auto",padding:"9px 12px",fontSize:11,color:C.muted,whiteSpace:"nowrap",borderLeft:`1px solid ${C.border}`}}>
+              📊 {stocks.length} · ₹{inr(portfolioPnl)} · {portfolioTrades} trades
             </div>
           )}
         </div>
@@ -972,139 +830,121 @@ function App() {
 
       {/* Landing */}
       {!s && !autoProgress && (
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:18, padding:48, minHeight:"60vh", textAlign:"center" }}>
-          <div style={{ fontSize:52 }}>📈</div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,padding:48,minHeight:"55vh",textAlign:"center"}}>
+          <div style={{fontSize:52}}>📈</div>
           <div>
-            <div style={{ fontWeight:700, fontSize:20, marginBottom:6 }}>Darvas Box Weekly Trigger Backtest</div>
-            <div style={{ color:C.muted, fontSize:13 }}>5 नियम · BOH Filter · 6-Part Capital Allocation</div>
-          </div>
-          <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
-            <button onClick={()=>setListOpen(true)} style={{ background:"linear-gradient(135deg,#2563eb,#7c3aed)", color:"#fff", border:"none", borderRadius:10, padding:"13px 26px", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-              📋 Stocks List
-            </button>
-            <button onClick={autoLoadAll} style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:10, padding:"13px 26px", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-              🚀 Auto-load All (BOH check)
-            </button>
-          </div>
-          <div style={{ ...card(), padding:"12px 18px", maxWidth:520, textAlign:"left" }}>
-            <div style={{ fontSize:12, color:C.muted, lineHeight:1.9 }}>
-              <b style={{color:C.text}}>पाँचों नियम:</b><br/>
-              💰 <b style={{color:C.gtt}}>नियम 1</b>: Capital 6 भाग में · हर ट्रिगर पर 1 भाग (₹{inr(totalCapital)} ÷ 6 = ₹{inr(totalCapital/PARTS)})<br/>
-              📈 <b style={{color:"#fbbf24"}}>नियम 2</b>: पिछले हफ्ते के High पर GTT<br/>
-              🚫 <b style={{color:"#94a3b8"}}>नियम 3</b>: Last buy के ±2.75% में हो तो skip<br/>
-              🎯 <b style={{color:C.tgt}}>नियम 4</b>: Average price पर +6% target<br/>
-              🔍 <b style={{color:C.buy}}>नियम 5</b>: BOH filter (52W Low से ऊपर, गिरता नहीं)
+            <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Darvas Box Weekly Trigger Backtest</div>
+            <div style={{color:C.muted,fontSize:13}}>
+              {sheetInfo.loading ? "Sheet load हो रही है..." :
+               sheetInfo.source==="sheet" ? `✓ "${SHEET_NAME}" से ${stockList.length} stocks मिले` :
+               `⚠ Fallback list (${stockList.length} stocks)`}
             </div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
+            <button onClick={()=>setListOpen(true)} disabled={sheetInfo.loading}
+              style={{background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",borderRadius:10,padding:"13px 26px",fontSize:15,fontWeight:700,cursor:sheetInfo.loading?"wait":"pointer"}}>
+              📋 Final List खोलें
+            </button>
+            <button onClick={autoLoadAll} disabled={sheetInfo.loading}
+              style={{background:"none",color:"#93c5fd",border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 26px",fontSize:15,fontWeight:700,cursor:sheetInfo.loading?"wait":"pointer"}}>
+              🚀 All Fetch + BOH
+            </button>
           </div>
         </div>
       )}
 
-      {/* Main view */}
+      {/* Stock view */}
       {s && (
         <div>
-          {/* Stat cards */}
-          <div style={{ display:"flex", gap:10, padding:"14px 16px", overflowX:"auto" }}>
+          <div style={{display:"flex",gap:10,padding:"14px 16px",overflowX:"auto"}}>
             {[
-              { lbl:"Days",          val: s.rows.length,  clr: C.dim },
-              { lbl:"Trades",        val: s.trades.length, clr: C.buy },
-              { lbl:"Win Rate",      val: s.trades.length ? `${Math.round(wins/s.trades.length*100)}%` : "—", clr:"#93c5fd" },
-              { lbl:"Total P&L",     val:`₹${inr(totalPnL)}`, clr: totalPnL>=0 ? C.buy : "#f87171" },
-              { lbl:"Parts Used",    val: s.openPosition ? `${s.openPosition.partsUsed}/${PARTS}` : "0", clr: C.gtt },
-              { lbl:"Latest Close",  val:`₹${fmtN(last?.close)}`, clr:"#93c5fd" },
+              {lbl:"Days",       val:s.rows.length,   clr:C.dim},
+              {lbl:"Trades",     val:s.trades.length, clr:C.buy},
+              {lbl:"Win Rate",   val:s.trades.length ? `${Math.round(wins/s.trades.length*100)}%` : "—", clr:"#93c5fd"},
+              {lbl:"P&L",        val:`₹${inr(totalPnL)}`, clr: totalPnL>=0 ? C.buy : "#f87171"},
+              {lbl:"Parts",      val: s.openPosition ? `${s.openPosition.partsUsed}/${PARTS}` : "0", clr:C.gtt},
+              {lbl:"Close",      val:`₹${fmtN(last?.close)}`, clr:"#93c5fd"},
             ].map((c,i)=>(
-              <div key={i} style={{ ...card(), padding:"10px 16px", minWidth:100, textAlign:"center", flexShrink:0 }}>
-                <div style={{ fontSize:16, fontWeight:700, color:c.clr, fontFamily:"monospace" }}>{c.val}</div>
-                <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{c.lbl}</div>
+              <div key={i} style={{...card(), padding:"10px 16px", minWidth:95, textAlign:"center", flexShrink:0}}>
+                <div style={{fontSize:16,fontWeight:700,color:c.clr,fontFamily:"monospace"}}>{c.val}</div>
+                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{c.lbl}</div>
               </div>
             ))}
           </div>
-
-          {/* BOH + Status */}
-          <div style={{ margin:"0 16px 12px", ...card(), padding:"10px 16px", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
-            <span style={{ fontSize:11, color:C.muted }}>Status ({fmtD(last?.date)}):</span>
-            <span style={{background:"#0a1628",color:"#fbbf24",border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
-              🎯 {sourceLabel}
-            </span>
+          <div style={{margin:"0 16px 12px", ...card(), padding:"10px 16px", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:C.muted}}>{fmtD(last?.date)}:</span>
+            <span style={{background:"#0a1628",color:"#fbbf24",border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>🎯 {sourceLabel}</span>
             {s.boh && (
               <span style={{
                 background: s.boh.suitable ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",
                 color: s.boh.suitable ? C.buy : "#f87171",
-                border: `1px solid ${s.boh.suitable ? "#166534" : "#7f1d1d"}`,
-                borderRadius:6, padding:"3px 10px", fontSize:11, fontWeight:700
+                border:`1px solid ${s.boh.suitable?"#166534":"#7f1d1d"}`,
+                borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700
               }}>
-                {s.boh.suitable ? "✅ BOH Suitable" : "⛔ "+s.boh.reason}
+                {s.boh.suitable ? "✅ BOH" : "⛔ "+s.boh.reason}
               </span>
             )}
             {s.openPosition ? (
-              <span style={{ background:"#04130b", color:C.buy, border:"1px solid #166534", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
-                📈 HOLD {s.openPosition.shares} @ ₹{fmtN(s.openPosition.avg)} · Target ₹{fmtN(s.openPosition.target)} · Parts {s.openPosition.partsUsed}/6
-                <span style={{ color: s.openPosition.unrealized>=0 ? C.buy : "#f87171", marginLeft:8 }}>
-                  ({s.openPosition.unrealized>=0?"+":""}₹{inr(s.openPosition.unrealized)})
-                </span>
+              <span style={{background:"#04130b",color:C.buy,border:"1px solid #166534",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
+                📈 {s.openPosition.shares} @ ₹{fmtN(s.openPosition.avg)} · T ₹{fmtN(s.openPosition.target)} · Parts {s.openPosition.partsUsed}/6
+                <span style={{color: s.openPosition.unrealized>=0 ? C.buy : "#f87171",marginLeft:8}}>({s.openPosition.unrealized>=0?"+":""}₹{inr(s.openPosition.unrealized)})</span>
               </span>
             ) : s.pendingTrigger ? (
-              <span style={{ background:"#1c1407", color:C.gtt, border:"1px solid #78350f", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
+              <span style={{background:"#1c1407",color:C.gtt,border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
                 🔔 Next Trigger @ ₹{fmtN(s.pendingTrigger)}
               </span>
-            ) : (
-              <span style={{ color:C.muted, fontSize:12 }}>⏳ IDLE</span>
-            )}
+            ) : <span style={{color:C.muted,fontSize:12}}>⏳ IDLE</span>}
           </div>
-
-          {/* View tabs */}
-          <div style={{ padding:"0 16px 12px", display:"flex", gap:6, overflowX:"auto" }}>
+          <div style={{padding:"0 16px 12px", display:"flex", gap:6, overflowX:"auto"}}>
             {views.map(v=>(
               <button key={v.key} onClick={()=>setView(v.key)} style={{
                 background: view===v.key ? C.accent : "none",
                 color: view===v.key ? "#fff" : C.muted,
-                border: `1px solid ${view===v.key ? C.accent : C.border}`,
-                borderRadius:8, padding:"6px 12px", fontSize:12,
-                cursor:"pointer", fontWeight: view===v.key ? 700 : 400, whiteSpace:"nowrap"
+                border:`1px solid ${view===v.key ? C.accent : C.border}`,
+                borderRadius:8,padding:"6px 12px",fontSize:12,
+                cursor:"pointer",fontWeight: view===v.key?700:400,whiteSpace:"nowrap"
               }}>{v.lbl}</button>
             ))}
           </div>
 
           {view==="chart" && (
-            <div style={{ padding:"0 10px 20px" }}>
-              <div style={{ ...card(), padding:"10px 0" }}>
-                <div style={{ paddingLeft:14, fontSize:12, color:C.muted, marginBottom:6 }}>{s.name} — Close + {sourceLabel} Trigger</div>
+            <div style={{padding:"0 10px 20px"}}>
+              <div style={{...card(), padding:"10px 0"}}>
+                <div style={{paddingLeft:14,fontSize:12,color:C.muted,marginBottom:6}}>{s.name} — Close + {sourceLabel} Trigger</div>
                 <MiniChart rows={s.rows} sourceLabel={sourceLabel}/>
               </div>
             </div>
           )}
 
           {view==="trades" && (
-            <div style={{ padding:"0 16px 20px", display:"flex", flexDirection:"column", gap:8 }}>
-              {s.trades.length===0 && !s.openPosition && <div style={{ color:C.muted, textAlign:"center", padding:40 }}>कोई trade नहीं।</div>}
+            <div style={{padding:"0 16px 20px",display:"flex",flexDirection:"column",gap:8}}>
+              {s.trades.length===0 && !s.openPosition && <div style={{color:C.muted,textAlign:"center",padding:40}}>कोई trade नहीं।</div>}
               {s.trades.map((t,i)=>(
-                <div key={i} style={{ background:"#04130b", border:"1px solid #166534", borderRadius:10, padding:"10px 14px" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, flexWrap:"wrap", gap:6 }}>
-                    <span style={{ color:"#86efac", fontWeight:700, fontSize:13 }}>#{s.trades.length-i} — {fmtD(t.entryDate)} → {fmtD(t.exitDate)}</span>
-                    <span style={{ background:"#052e16", color:C.buy, border:"1px solid #166534", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>
+                <div key={i} style={{background:"#04130b",border:"1px solid #166534",borderRadius:10,padding:"10px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,flexWrap:"wrap",gap:6}}>
+                    <span style={{color:"#86efac",fontWeight:700,fontSize:13}}>#{s.trades.length-i} — {fmtD(t.entryDate)} → {fmtD(t.exitDate)}</span>
+                    <span style={{background:"#052e16",color:C.buy,border:"1px solid #166534",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>
                       🎯 +{t.pct.toFixed(2)}% · ₹{inr(t.pnl)}
                     </span>
                   </div>
-                  <div style={{ display:"flex", gap:20, fontSize:12, color:"#94a3b8", flexWrap:"wrap" }}>
-                    <span>Buy @ <b style={{color:C.buy}}>₹{fmtN(t.entry)}</b></span>
-                    <span>Exit @ <b style={{color:C.tgt}}>₹{fmtN(t.exit)}</b></span>
-                    <span>Qty: <b>{t.shares}</b></span>
-                    <span>Parts: <b>{t.partsUsed}/{PARTS}</b></span>
-                    <span>Held: <b>{t.days}</b> दिन</span>
+                  <div style={{display:"flex",gap:20,fontSize:12,color:"#94a3b8",flexWrap:"wrap"}}>
+                    <span>Buy ₹{fmtN(t.entry)}</span><span>Exit ₹{fmtN(t.exit)}</span>
+                    <span>Qty {t.shares}</span><span>Parts {t.partsUsed}/{PARTS}</span>
+                    <span>{t.days}d</span>
                   </div>
                 </div>
               ))}
               {s.openPosition && (
-                <div style={{ background:"#1c1407", border:"1px solid #78350f", borderRadius:10, padding:"10px 14px" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-                    <span style={{ color:"#fde68a", fontWeight:700, fontSize:13 }}>OPEN — {fmtD(s.openPosition.entryDate)}</span>
-                    <span style={{ background:"#1c1407", color:C.gtt, border:"1px solid #78350f", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>⏳ {s.openPosition.partsUsed}/6 parts</span>
+                <div style={{background:"#1c1407",border:"1px solid #78350f",borderRadius:10,padding:"10px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                    <span style={{color:"#fde68a",fontWeight:700,fontSize:13}}>OPEN — {fmtD(s.openPosition.entryDate)}</span>
+                    <span style={{background:"#1c1407",color:C.gtt,border:"1px solid #78350f",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>⏳ {s.openPosition.partsUsed}/6</span>
                   </div>
-                  <div style={{ display:"flex", gap:20, fontSize:12, color:"#94a3b8", flexWrap:"wrap" }}>
-                    <span>Avg: <b style={{color:C.buy}}>₹{fmtN(s.openPosition.avg)}</b></span>
-                    <span>Target: <b style={{color:C.tgt}}>₹{fmtN(s.openPosition.target)}</b></span>
-                    <span>Qty: <b>{s.openPosition.shares}</b></span>
-                    <span>Cost: <b>₹{inr(s.openPosition.cost)}</b></span>
-                    <span>Unreal: <b style={{color: s.openPosition.unrealized>=0 ? C.buy : "#f87171"}}>₹{inr(s.openPosition.unrealized)}</b></span>
+                  <div style={{display:"flex",gap:20,fontSize:12,color:"#94a3b8",flexWrap:"wrap"}}>
+                    <span>Avg ₹{fmtN(s.openPosition.avg)}</span>
+                    <span>T ₹{fmtN(s.openPosition.target)}</span>
+                    <span>Qty {s.openPosition.shares}</span>
+                    <span>Unreal <b style={{color: s.openPosition.unrealized>=0 ? C.buy : "#f87171"}}>₹{inr(s.openPosition.unrealized)}</b></span>
                   </div>
                 </div>
               )}
@@ -1112,8 +952,8 @@ function App() {
           )}
 
           {view==="log" && (
-            <div style={{ padding:"0 16px 20px", display:"flex", flexDirection:"column", gap:8 }}>
-              {events.length===0 && <div style={{ color:C.muted, textAlign:"center", padding:40 }}>कोई event नहीं।</div>}
+            <div style={{padding:"0 16px 20px",display:"flex",flexDirection:"column",gap:8}}>
+              {events.length===0 && <div style={{color:C.muted,textAlign:"center",padding:40}}>कोई event नहीं।</div>}
               {events.map((r,i)=>{
                 const isTgt = r.events.includes("target");
                 const isBuy = r.events.includes("buy");
@@ -1121,22 +961,20 @@ function App() {
                 const bg = isTgt ? C.tgtBg : isBuy ? C.buyBg : isIgn ? "#0a1628" : C.card;
                 const bd = isTgt ? "#6b21a8" : isBuy ? "#166534" : isIgn ? "#334155" : C.border;
                 return (
-                  <div key={i} style={{ background:bg, border:`1px solid ${bd}`, borderRadius:10, padding:"10px 14px" }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, flexWrap:"wrap", gap:6 }}>
-                      <span style={{ color:C.dim, fontWeight:700, fontSize:13, fontFamily:"monospace" }}>{fmtD(r.date)}</span>
-                      <span style={{ display:"flex", gap:6 }}>
-                        {isIgn && <span style={{ background:"#1e293b", color:"#94a3b8", border:"1px solid #334155", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>⚠ IGNORE</span>}
-                        {isBuy && <span style={{ background:"#052e16", color:C.buy, border:"1px solid #166534", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>✅ BUY</span>}
-                        {isTgt && <span style={{ background:"#2e1065", color:C.tgt, border:"1px solid #6b21a8", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>🎯 TARGET</span>}
+                  <div key={i} style={{background:bg,border:`1px solid ${bd}`,borderRadius:10,padding:"10px 14px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,flexWrap:"wrap",gap:6}}>
+                      <span style={{color:C.dim,fontWeight:700,fontSize:13,fontFamily:"monospace"}}>{fmtD(r.date)}</span>
+                      <span style={{display:"flex",gap:6}}>
+                        {isIgn && <span style={{background:"#1e293b",color:"#94a3b8",border:"1px solid #334155",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>⚠ IGNORE</span>}
+                        {isBuy && <span style={{background:"#052e16",color:C.buy,border:"1px solid #166534",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>✅ BUY</span>}
+                        {isTgt && <span style={{background:"#2e1065",color:C.tgt,border:"1px solid #6b21a8",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>🎯 TARGET</span>}
                       </span>
                     </div>
-                    <div style={{ display:"flex", gap:20, fontSize:12, color:"#94a3b8", flexWrap:"wrap" }}>
-                      <span>H: ₹{fmtN(r.high)}</span>
-                      <span>L: ₹{fmtN(r.low)}</span>
-                      <span>C: ₹{fmtN(r.close)}</span>
-                      {r.wkTrigger && <span>Trigger @ <b style={{color:C.gtt}}>₹{fmtN(r.wkTrigger)}</b></span>}
-                      {r.buyPrice && <span>Buy {r.position?.qty} sh @ <b style={{color:C.buy}}>₹{fmtN(r.buyPrice)}</b></span>}
-                      {r.position && <span>Target @ <b style={{color:C.tgt}}>₹{fmtN(r.position.target)}</b> · Parts {r.position.partsUsed}/6</span>}
+                    <div style={{display:"flex",gap:20,fontSize:12,color:"#94a3b8",flexWrap:"wrap"}}>
+                      <span>H ₹{fmtN(r.high)}</span><span>L ₹{fmtN(r.low)}</span><span>C ₹{fmtN(r.close)}</span>
+                      {r.wkTrigger && <span>Trg <b style={{color:C.gtt}}>₹{fmtN(r.wkTrigger)}</b></span>}
+                      {r.buyPrice && <span>Buy {r.position?.qty} @ <b style={{color:C.buy}}>₹{fmtN(r.buyPrice)}</b></span>}
+                      {r.position && <span>T @ <b style={{color:C.tgt}}>₹{fmtN(r.position.target)}</b></span>}
                     </div>
                   </div>
                 );
@@ -1145,12 +983,12 @@ function App() {
           )}
 
           {view==="table" && (
-            <div style={{ overflowX:"auto", padding:"0 0 20px" }}>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
+            <div style={{overflowX:"auto",padding:"0 0 20px"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead>
-                  <tr style={{ background:C.card }}>
+                  <tr style={{background:C.card}}>
                     {["Date","Close","Trigger","Ign Low","Ign High","Event"].map(h=>(
-                      <th key={h} style={{ padding:"8px", textAlign:["Date","Event"].includes(h)?"left":"right", color:C.muted, fontWeight:600, borderBottom:`1px solid ${C.border}`, whiteSpace:"nowrap", fontSize:10 }}>{h}</th>
+                      <th key={h} style={{padding:"8px",textAlign:["Date","Event"].includes(h)?"left":"right",color:C.muted,fontWeight:600,borderBottom:`1px solid ${C.border}`,whiteSpace:"nowrap",fontSize:10}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1163,16 +1001,16 @@ function App() {
                     const igL = r.wkTrigger ? r.wkTrigger*(1-IGNORE_PCT) : null;
                     const igH = r.wkTrigger ? r.wkTrigger*(1+IGNORE_PCT) : null;
                     return (
-                      <tr key={i} style={{ background:bg, borderBottom:"1px solid #0d1a2a" }}>
-                        <td style={{ padding:"6px 8px", color:C.dim, whiteSpace:"nowrap", fontFamily:"monospace", fontSize:10 }}>{fmtD(r.date)}</td>
-                        <td style={{ padding:"6px 8px", textAlign:"right", fontWeight:600, fontFamily:"monospace" }}>{fmtN(r.close)}</td>
-                        <td style={{ padding:"6px 8px", textAlign:"right", color:C.gtt, fontFamily:"monospace" }}>{r.wkTrigger ? fmtN(r.wkTrigger) : "—"}</td>
-                        <td style={{ padding:"6px 8px", textAlign:"right", color:C.muted, fontFamily:"monospace" }}>{igL ? fmtN(igL) : "—"}</td>
-                        <td style={{ padding:"6px 8px", textAlign:"right", color:C.muted, fontFamily:"monospace" }}>{igH ? fmtN(igH) : "—"}</td>
-                        <td style={{ padding:"6px 8px", fontSize:10, whiteSpace:"nowrap" }}>
-                          {isIgn && <span style={{ color:"#94a3b8", marginRight:6 }}>⚠ IGN</span>}
-                          {isBuy && <span style={{ color:C.buy, marginRight:6 }}>✅ BUY</span>}
-                          {isTgt && <span style={{ color:C.tgt }}>🎯 TGT</span>}
+                      <tr key={i} style={{background:bg,borderBottom:"1px solid #0d1a2a"}}>
+                        <td style={{padding:"6px 8px",color:C.dim,whiteSpace:"nowrap",fontFamily:"monospace",fontSize:10}}>{fmtD(r.date)}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,fontFamily:"monospace"}}>{fmtN(r.close)}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:C.gtt,fontFamily:"monospace"}}>{r.wkTrigger ? fmtN(r.wkTrigger) : "—"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:C.muted,fontFamily:"monospace"}}>{igL ? fmtN(igL) : "—"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:C.muted,fontFamily:"monospace"}}>{igH ? fmtN(igH) : "—"}</td>
+                        <td style={{padding:"6px 8px",fontSize:10,whiteSpace:"nowrap"}}>
+                          {isIgn && <span style={{color:"#94a3b8",marginRight:6}}>⚠ IGN</span>}
+                          {isBuy && <span style={{color:C.buy,marginRight:6}}>✅ BUY</span>}
+                          {isTgt && <span style={{color:C.tgt}}>🎯 TGT</span>}
                         </td>
                       </tr>
                     );
@@ -1193,33 +1031,31 @@ function App() {
           autoProgress={autoProgress}
           bohCache={bohCache}
           totalCapital={totalCapital}
+          stockList={stockList}
+          sheetInfo={sheetInfo}
+          reloadSheet={loadSheet}
         />
       )}
 
       {/* CSV modal */}
       {modal && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.8)", display:"flex", alignItems:"flex-end", zIndex:100 }}
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",display:"flex",alignItems:"flex-end",zIndex:100}}
           onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""))}>
-          <div style={{ background:"#0d1a2a", borderTop:`1px solid ${C.border}`, borderRadius:"18px 18px 0 0", padding:20, width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
-            <div style={{ fontWeight:700, fontSize:16, marginBottom:18 }}>📥 CSV Upload</div>
-            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>Stock का नाम</label>
-            <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="जैसे: NSE:RELIANCE"
-              style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:14, boxSizing:"border-box", marginBottom:14, outline:"none" }}/>
-            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>CSV File</label>
+          <div style={{background:"#0d1a2a",borderTop:`1px solid ${C.border}`,borderRadius:"18px 18px 0 0",padding:20,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:18}}>📥 CSV Upload</div>
+            <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Stock name (जैसे: NSE:RELIANCE)"
+              style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",marginBottom:14,outline:"none"}}/>
             <input type="file" accept=".csv,.txt" onChange={onFile}
-              style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:13, boxSizing:"border-box", marginBottom:10 }}/>
-            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>या CSV Paste करें</label>
+              style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:13,boxSizing:"border-box",marginBottom:10}}/>
             <textarea value={csvTxt} onChange={e=>setCsvTxt(e.target.value)} rows={9}
               placeholder={"Date,Open,High,Low,Close\n3-Oct-22,3440,3460.05,3110.2,3157.3"}
-              style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:11, fontFamily:"monospace", resize:"vertical", boxSizing:"border-box", marginBottom:10, outline:"none" }}/>
-            {err && (
-              <div style={{ color:"#f87171", background:"rgba(239,68,68,.1)", border:"1px solid rgba(239,68,68,.3)", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>❌ {err}</div>
-            )}
-            <div style={{ display:"flex", gap:10 }}>
+              style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:11,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",marginBottom:10,outline:"none"}}/>
+            {err && <div style={{color:"#f87171",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:12}}>❌ {err}</div>}
+            <div style={{display:"flex",gap:10}}>
               <button onClick={()=>{ setModal(false); setErr(""); }}
-                style={{ flex:1, background:C.border, color:C.text, border:"none", borderRadius:10, padding:12, fontSize:14, cursor:"pointer" }}>Cancel</button>
+                style={{flex:1,background:C.border,color:C.text,border:"none",borderRadius:10,padding:12,fontSize:14,cursor:"pointer"}}>Cancel</button>
               <button onClick={submitAdd}
-                style={{ flex:2, background:C.accent, color:"#fff", border:"none", borderRadius:10, padding:12, fontSize:14, fontWeight:700, cursor:"pointer" }}>✅ Backtest चलाओ</button>
+                style={{flex:2,background:C.accent,color:"#fff",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer"}}>✅ Backtest</button>
             </div>
           </div>
         </div>
@@ -1227,12 +1063,12 @@ function App() {
 
       {toast && (
         <div style={{
-          position:"fixed", top:16, left:"50%", transform:"translateX(-50%)",
+          position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",
           background: toast.type==="error" ? "#7f1d1d" : "#052e16",
           color: toast.type==="error" ? "#fecaca" : "#86efac",
-          border: `1px solid ${toast.type==="error" ? "#991b1b" : "#166534"}`,
-          borderRadius:10, padding:"10px 18px", fontSize:13, fontWeight:600,
-          zIndex:999, boxShadow:"0 10px 30px rgba(0,0,0,.5)", maxWidth:"90vw"
+          border:`1px solid ${toast.type==="error"?"#991b1b":"#166534"}`,
+          borderRadius:10,padding:"10px 18px",fontSize:13,fontWeight:600,
+          zIndex:999,boxShadow:"0 10px 30px rgba(0,0,0,.5)",maxWidth:"90vw"
         }}>{toast.msg}</div>
       )}
     </div>
