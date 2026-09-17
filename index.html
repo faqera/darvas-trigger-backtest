@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Weekly Trigger Backtest — Auto</title>
+<title>Darvas Box Weekly Trigger Backtest v2</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #080f1a; -webkit-tap-highlight-color: transparent; }
@@ -21,170 +21,216 @@
 <script type="text/babel">
 const { useState } = React;
 
-const TARGET_PCT = 0.06;
-const IGNORE_PCT = 0.0275;
-const QTY_HIGH = 1;
-const QTY_LOW = 2;
-const QTY_THRESHOLD = 3000;
-const DEFAULT_RANGE = "1y";
+/* ================================================================
+   RULE CONSTANTS
+   ================================================================ */
+const TARGET_PCT      = 0.06;    // Rule 4: 6% profit target
+const IGNORE_PCT      = 0.0275;  // Rule 3: ±2.75% ignorable range
+const PARTS           = 6;       // Rule 1: capital divided in 6 parts
+const DEFAULT_CAPITAL = 120000;  // Rule 1: default total trading capital
+const DEFAULT_RANGE   = "2y";
 
 const TRIGGER_SOURCES = [
-  { key:"1w", label:"1W High (Adani)" },
-  { key:"2w", label:"2W High" },
+  { key:"1w", label:"1W High (Weekly)" },
+  { key:"2w", label:"2W High (Fortnight)" },
   { key:"4w", label:"4W High (Monthly)" },
 ];
 
-// ---------- Stocks List ----------
+/* ================================================================
+   STOCK UNIVERSE (Top-100 market cap list)
+   ================================================================ */
 const STOCKS_DB = [
-  {sym:"RELIANCE",name:"Reliance Industries",cmp:1263,h:1611.80,l:1249.80,out:"S"},
-  {sym:"TCS",name:"Tata Consultancy Services",cmp:2207.90,h:3350.00,l:1976.80,out:"S"},
-  {sym:"HDFCBANK",name:"HDFC Bank",cmp:708.50,h:1020.50,l:681.90,out:"S"},
-  {sym:"ICICIBANK",name:"ICICI Bank",cmp:1381.60,h:1480.00,l:1187.60,out:"A"},
-  {sym:"HINDUNILVR",name:"Hindustan Unilever",cmp:1934.90,h:2633.68,l:1926.20,out:"S"},
-  {sym:"INFY",name:"Infosys",cmp:1038.70,h:1728.00,l:982.40,out:"S"},
-  {sym:"ITC",name:"ITC",cmp:261.45,h:426.40,l:255.50,out:"S"},
-  {sym:"SBIN",name:"State Bank of India",cmp:996.20,h:1234.70,l:819.00,out:"A"},
-  {sym:"BHARTIARTL",name:"Bharti Airtel",cmp:1841.00,h:2174.50,l:1740.50,out:"S"},
-  {sym:"KOTAKBANK",name:"Kotak Mahindra Bank",cmp:417.70,h:453.20,l:345.50,out:"S"},
-  {sym:"BAJFINANCE",name:"Bajaj Finance",cmp:1035.00,h:1176.40,l:787.90,out:"A"},
-  {sym:"LICI",name:"Life Insurance Corp",cmp:403.80,h:468.48,l:360.75,out:"S"},
-  {sym:"LT",name:"Larsen & Toubro",cmp:3938.20,h:4440.00,l:3288.10,out:"S"},
-  {sym:"HCLTECH",name:"HCL Technologies",cmp:1214.00,h:1780.10,l:1030.00,out:"S"},
-  {sym:"ASIANPAINT",name:"Asian Paints",cmp:2467.70,h:2985.70,l:2115.00,out:"S"},
-  {sym:"AXISBANK",name:"Axis Bank",cmp:1251.10,h:1418.30,l:1069.00,out:"A"},
-  {sym:"MARUTI",name:"Maruti Suzuki",cmp:12432.00,h:17370.00,l:12201.00,out:"S"},
-  {sym:"SUNPHARMA",name:"Sun Pharmaceutical",cmp:1840.50,h:2046.90,l:1548.00,out:"A"},
-  {sym:"TITAN",name:"Titan Company",cmp:5005.00,h:5186.70,l:3303.10,out:"A"},
-  {sym:"DMART",name:"Avenue Supermarts",cmp:3685.00,h:4818.00,l:3529.00,out:"S"},
-  {sym:"ULTRACEMCO",name:"UltraTech Cement",cmp:11000.00,h:13110.00,l:10325.00,out:"S"},
-  {sym:"BAJAJFINSV",name:"Bajaj Finserv",cmp:1924.00,h:2195.00,l:1597.00,out:"S"},
-  {sym:"WIPRO",name:"Wipro",cmp:167.31,h:273.10,l:165.16,out:"S"},
-  {sym:"ADANIENT",name:"Adani Enterprises",cmp:3061.00,h:3245.00,l:1753.00,out:"A"},
-  {sym:"ONGC",name:"Oil & Natural Gas Corp",cmp:233.55,h:307.50,l:227.65,out:"S"},
-  {sym:"NTPC",name:"NTPC",cmp:332.00,h:414.40,l:315.55,out:"A"},
-  {sym:"JSWSTEEL",name:"JSW Steel",cmp:1269.30,h:1351.00,l:1073.20,out:"A"},
-  {sym:"POWERGRID",name:"Power Grid Corp",cmp:269.00,h:324.95,l:250.00,out:"A"},
-  {sym:"M&M",name:"Mahindra & Mahindra",cmp:3114.60,h:3839.90,l:2896.00,out:"S"},
-  {sym:"ADANIGREEN",name:"Adani Green Energy",cmp:1282.70,h:1631.50,l:765.00,out:"A"},
-  {sym:"ADANIPORTS",name:"Adani Ports & SEZ",cmp:1767.50,h:1891.10,l:1292.00,out:"A"},
-  {sym:"COALINDIA",name:"Coal India",cmp:425.00,h:491.25,l:369.60,out:"A"},
-  {sym:"TATASTEEL",name:"Tata Steel",cmp:182.58,h:224.40,l:160.06,out:"A"},
-  {sym:"HINDZINC",name:"Hindustan Zinc",cmp:576.50,h:733.00,l:433.55,out:"A"},
-  {sym:"PIDILITIND",name:"Pidilite Industries",cmp:1562.00,h:1707.50,l:1259.00,out:"A"},
-  {sym:"SIEMENS",name:"Siemens India",cmp:3931.00,h:4149.40,l:2826.00,out:"A"},
-  {sym:"ADANIENSOL",name:"Adani Energy Solutions",cmp:1376.70,h:1789.00,l:803.10,out:"A"},
-  {sym:"SBILIFE",name:"SBI Life Insurance",cmp:1692.00,h:2132.00,l:1671.00,out:"S"},
-  {sym:"IOC",name:"Indian Oil Corp",cmp:135.71,h:188.96,l:130.22,out:"S"},
-  {sym:"BAJAJ-AUTO",name:"Bajaj Auto",cmp:11652.00,h:12470.00,l:8491.50,out:"A"},
-  {sym:"GRASIM",name:"Grasim Industries",cmp:3283.60,h:3411.10,l:2502.50,out:"A"},
-  {sym:"TECHM",name:"Tech Mahindra",cmp:1538.90,h:1854.00,l:1304.10,out:"S"},
-  {sym:"HDFCLIFE",name:"HDFC Life Insurance",cmp:528.30,h:796.90,l:508.70,out:"S"},
-  {sym:"BRITANNIA",name:"Britannia Industries",cmp:4982.00,h:6319.50,l:4945.00,out:"S"},
-  {sym:"VEDL",name:"Vedanta",cmp:263.40,h:360.00,l:155.86,out:"S"},
-  {sym:"GODREJCP",name:"Godrej Consumer Products",cmp:865.00,h:1273.90,l:855.15,out:"S"},
-  {sym:"DABUR",name:"Dabur India",cmp:376.00,h:548.40,l:368.05,out:"S"},
-  {sym:"ATGL",name:"Adani Total Gas",cmp:596.05,h:859.85,l:462.80,out:"A"},
-  {sym:"SHREECEM",name:"Shree Cement",cmp:22570.00,h:30285.00,l:22370.00,out:"S"},
-  {sym:"HAL",name:"Hindustan Aeronautics",cmp:4917.00,h:5149.90,l:3479.10,out:"A"},
-  {sym:"HINDALCO",name:"Hindalco Industries",cmp:985.50,h:1176.00,l:731.95,out:"A"},
-  {sym:"VBL",name:"Varun Beverages",cmp:413.95,h:555.80,l:381.00,out:"A"},
-  {sym:"DLF",name:"DLF",cmp:643.00,h:794.80,l:489.40,out:"S"},
-  {sym:"BANKBARODA",name:"Bank of Baroda",cmp:236.84,h:325.50,l:234.05,out:"S"},
-  {sym:"INDUSINDBK",name:"IndusInd Bank",cmp:978.20,h:1077.85,l:710.60,out:"A"},
-  {sym:"EICHERMOT",name:"Eicher Motors",cmp:7568.00,h:8230.00,l:6442.00,out:"S"},
-  {sym:"DRREDDY",name:"Dr. Reddy's Labs",cmp:1173.00,h:1414.90,l:1101.00,out:"S"},
-  {sym:"DIVISLAB",name:"Divi's Laboratories",cmp:9344.00,h:9615.00,l:5636.50,out:"A"},
-  {sym:"BPCL",name:"Bharat Petroleum",cmp:305.15,h:391.65,l:266.60,out:"S"},
-  {sym:"HAVELLS",name:"Havells India",cmp:1111.90,h:1621.10,l:1096.20,out:"S"},
-  {sym:"ADANIPOWER",name:"Adani Power",cmp:209.70,h:254.20,l:120.00,out:"A"},
-  {sym:"INDIGO",name:"InterGlobe Aviation",cmp:4969.00,h:5970.00,l:3895.20,out:"S"},
-  {sym:"CIPLA",name:"Cipla",cmp:1354.10,h:1673.00,l:1165.70,out:"S"},
-  {sym:"AMBUJACEM",name:"Ambuja Cements",cmp:392.60,h:600.80,l:387.65,out:"S"},
-  {sym:"SRF",name:"SRF",cmp:2480.00,h:3210.00,l:2355.00,out:"S"},
-  {sym:"ABB",name:"ABB India",cmp:7240.00,h:7924.50,l:4637.50,out:"A"},
-  {sym:"BEL",name:"Bharat Electronics",cmp:404.35,h:473.45,l:380.45,out:"A"},
-  {sym:"SBICARD",name:"SBI Cards",cmp:656.05,h:965.00,l:565.45,out:"S"},
-  {sym:"GAIL",name:"GAIL India",cmp:174.10,h:186.87,l:134.36,out:"S"},
-  {sym:"BAJAJHLDNG",name:"Bajaj Holdings",cmp:11140.00,h:13880.00,l:8588.00,out:"S"},
-  {sym:"TATACONSUM",name:"Tata Consumer Products",cmp:990.50,h:1282.70,l:988.00,out:"S"},
-  {sym:"ICICIPRULI",name:"ICICI Prudential Life",cmp:474.30,h:706.80,l:455.30,out:"S"},
-  {sym:"CHOLAFIN",name:"Cholamandalam Investment",cmp:1843.10,h:1952.50,l:1299.40,out:"A"},
-  {sym:"MARICO",name:"Marico",cmp:805.00,h:889.10,l:690.30,out:"A"},
-  {sym:"APOLLOHOSP",name:"Apollo Hospitals",cmp:8870.00,h:9050.00,l:6696.50,out:"A"},
-  {sym:"TATAPOWER",name:"Tata Power",cmp:366.80,h:464.90,l:342.50,out:"A"},
-  {sym:"BOSCHLTD",name:"Bosch",cmp:48200.00,h:50000.00,l:28610.00,out:"A"},
-  {sym:"BERGEPAINT",name:"Berger Paints",cmp:458.50,h:594.55,l:391.10,out:"S"},
-  {sym:"JINDALSTEL",name:"Jindal Steel & Power",cmp:1112.00,h:1306.20,l:977.10,out:"A"},
-  {sym:"UPL",name:"UPL",cmp:575.55,h:812.20,l:557.95,out:"S"},
-  {sym:"AWL",name:"Adani Wilmar",cmp:185.80,h:282.90,l:171.19,out:"S"},
-  {sym:"ICICIGI",name:"ICICI Lombard",cmp:1459.00,h:2064.90,l:1443.70,out:"S"},
-  {sym:"TORNTPHARM",name:"Torrent Pharmaceuticals",cmp:4959.00,h:5250.00,l:3480.60,out:"A"},
-  {sym:"CANBK",name:"Canara Bank",cmp:123.50,h:162.89,l:110.64,out:"A"},
-  {sym:"PNB",name:"Punjab National Bank",cmp:117.39,h:135.15,l:98.50,out:"S"},
-  {sym:"TVSMOTOR",name:"TVS Motor Company",cmp:4133.00,h:4484.50,l:3228.00,out:"A"},
-  {sym:"ZYDUSLIFE",name:"Zydus Lifesciences",cmp:1121.00,h:1205.00,l:835.50,out:"A"},
-  {sym:"TIINDIA",name:"Tube Investments",cmp:2607.60,h:3419.90,l:2164.90,out:"S"},
-  {sym:"TRENT",name:"Trent",cmp:2811.00,h:3498.66,l:2183.66,out:"S"},
-  {sym:"IDBI",name:"IDBI Bank",cmp:83.55,h:118.38,l:61.01,out:"S"},
-  {sym:"NAUKRI",name:"Info Edge India",cmp:1250.80,h:1433.60,l:908.30,out:"S"},
-  {sym:"SHRIRAMFIN",name:"Shriram Finance",cmp:1031.90,h:1153.70,l:602.80,out:"A"},
-  {sym:"HEROMOTOCO",name:"Hero MotoCorp",cmp:5234.50,h:6388.50,l:4671.50,out:"S"},
-  {sym:"INDHOTEL",name:"Indian Hotels",cmp:720.10,h:792.55,l:565.00,out:"S"},
-  {sym:"PIIND",name:"PI Industries",cmp:2257.00,h:3832.90,l:2191.00,out:"S"},
-  {sym:"IRCTC",name:"IRCTC",cmp:463.70,h:739.00,l:462.15,out:"S"},
-  {sym:"CGPOWER",name:"CG Power",cmp:912.50,h:980.90,l:525.50,out:"A"},
+  {sym:"RELIANCE",name:"Reliance Industries"},
+  {sym:"TCS",name:"Tata Consultancy Services"},
+  {sym:"HDFCBANK",name:"HDFC Bank"},
+  {sym:"ICICIBANK",name:"ICICI Bank"},
+  {sym:"HINDUNILVR",name:"Hindustan Unilever"},
+  {sym:"INFY",name:"Infosys"},
+  {sym:"ITC",name:"ITC"},
+  {sym:"SBIN",name:"State Bank of India"},
+  {sym:"BHARTIARTL",name:"Bharti Airtel"},
+  {sym:"KOTAKBANK",name:"Kotak Mahindra Bank"},
+  {sym:"BAJFINANCE",name:"Bajaj Finance"},
+  {sym:"LICI",name:"Life Insurance Corp"},
+  {sym:"LT",name:"Larsen & Toubro"},
+  {sym:"HCLTECH",name:"HCL Technologies"},
+  {sym:"ASIANPAINT",name:"Asian Paints"},
+  {sym:"AXISBANK",name:"Axis Bank"},
+  {sym:"MARUTI",name:"Maruti Suzuki"},
+  {sym:"SUNPHARMA",name:"Sun Pharmaceutical"},
+  {sym:"TITAN",name:"Titan Company"},
+  {sym:"DMART",name:"Avenue Supermarts"},
+  {sym:"ULTRACEMCO",name:"UltraTech Cement"},
+  {sym:"BAJAJFINSV",name:"Bajaj Finserv"},
+  {sym:"WIPRO",name:"Wipro"},
+  {sym:"ADANIENT",name:"Adani Enterprises"},
+  {sym:"ONGC",name:"Oil & Natural Gas Corp"},
+  {sym:"NTPC",name:"NTPC"},
+  {sym:"JSWSTEEL",name:"JSW Steel"},
+  {sym:"POWERGRID",name:"Power Grid Corp"},
+  {sym:"M&M",name:"Mahindra & Mahindra"},
+  {sym:"ADANIGREEN",name:"Adani Green Energy"},
+  {sym:"ADANIPORTS",name:"Adani Ports & SEZ"},
+  {sym:"COALINDIA",name:"Coal India"},
+  {sym:"TATASTEEL",name:"Tata Steel"},
+  {sym:"HINDZINC",name:"Hindustan Zinc"},
+  {sym:"PIDILITIND",name:"Pidilite Industries"},
+  {sym:"SIEMENS",name:"Siemens India"},
+  {sym:"ADANIENSOL",name:"Adani Energy Solutions"},
+  {sym:"SBILIFE",name:"SBI Life Insurance"},
+  {sym:"IOC",name:"Indian Oil Corp"},
+  {sym:"BAJAJ-AUTO",name:"Bajaj Auto"},
+  {sym:"GRASIM",name:"Grasim Industries"},
+  {sym:"TECHM",name:"Tech Mahindra"},
+  {sym:"HDFCLIFE",name:"HDFC Life Insurance"},
+  {sym:"BRITANNIA",name:"Britannia Industries"},
+  {sym:"VEDL",name:"Vedanta"},
+  {sym:"GODREJCP",name:"Godrej Consumer Products"},
+  {sym:"DABUR",name:"Dabur India"},
+  {sym:"ATGL",name:"Adani Total Gas"},
+  {sym:"SHREECEM",name:"Shree Cement"},
+  {sym:"HAL",name:"Hindustan Aeronautics"},
+  {sym:"HINDALCO",name:"Hindalco Industries"},
+  {sym:"VBL",name:"Varun Beverages"},
+  {sym:"DLF",name:"DLF"},
+  {sym:"BANKBARODA",name:"Bank of Baroda"},
+  {sym:"INDUSINDBK",name:"IndusInd Bank"},
+  {sym:"EICHERMOT",name:"Eicher Motors"},
+  {sym:"DRREDDY",name:"Dr. Reddy's Labs"},
+  {sym:"DIVISLAB",name:"Divi's Laboratories"},
+  {sym:"BPCL",name:"Bharat Petroleum"},
+  {sym:"HAVELLS",name:"Havells India"},
+  {sym:"ADANIPOWER",name:"Adani Power"},
+  {sym:"INDIGO",name:"InterGlobe Aviation"},
+  {sym:"CIPLA",name:"Cipla"},
+  {sym:"AMBUJACEM",name:"Ambuja Cements"},
+  {sym:"SRF",name:"SRF"},
+  {sym:"ABB",name:"ABB India"},
+  {sym:"BEL",name:"Bharat Electronics"},
+  {sym:"SBICARD",name:"SBI Cards"},
+  {sym:"GAIL",name:"GAIL India"},
+  {sym:"BAJAJHLDNG",name:"Bajaj Holdings"},
+  {sym:"TATACONSUM",name:"Tata Consumer Products"},
+  {sym:"ICICIPRULI",name:"ICICI Prudential Life"},
+  {sym:"CHOLAFIN",name:"Cholamandalam Investment"},
+  {sym:"MARICO",name:"Marico"},
+  {sym:"APOLLOHOSP",name:"Apollo Hospitals"},
+  {sym:"TATAPOWER",name:"Tata Power"},
+  {sym:"BOSCHLTD",name:"Bosch"},
+  {sym:"BERGEPAINT",name:"Berger Paints"},
+  {sym:"JINDALSTEL",name:"Jindal Steel & Power"},
+  {sym:"UPL",name:"UPL"},
+  {sym:"AWL",name:"Adani Wilmar"},
+  {sym:"ICICIGI",name:"ICICI Lombard"},
+  {sym:"TORNTPHARM",name:"Torrent Pharmaceuticals"},
+  {sym:"CANBK",name:"Canara Bank"},
+  {sym:"PNB",name:"Punjab National Bank"},
+  {sym:"TVSMOTOR",name:"TVS Motor Company"},
+  {sym:"ZYDUSLIFE",name:"Zydus Lifesciences"},
+  {sym:"TIINDIA",name:"Tube Investments"},
+  {sym:"TRENT",name:"Trent"},
+  {sym:"IDBI",name:"IDBI Bank"},
+  {sym:"NAUKRI",name:"Info Edge India"},
+  {sym:"SHRIRAMFIN",name:"Shriram Finance"},
+  {sym:"HEROMOTOCO",name:"Hero MotoCorp"},
+  {sym:"INDHOTEL",name:"Indian Hotels"},
+  {sym:"PIIND",name:"PI Industries"},
+  {sym:"IRCTC",name:"IRCTC"},
+  {sym:"CGPOWER",name:"CG Power"},
 ];
 
+/* ================================================================
+   HELPERS
+   ================================================================ */
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
 const fmtDISO = d => {
   if (!d) return "";
   const dt = new Date(d);
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth()+1).padStart(2,"0");
-  const day = String(dt.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
 };
 const fmtN = (v,d=2) => (v==null||isNaN(v)) ? "—" : Number(v).toFixed(d);
-const inr = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+const inr  = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
 
-// ---------- Yahoo Finance Auto Fetch ----------
+/* ================================================================
+   YAHOO FINANCE FETCH (with proxy fallback)
+   ================================================================ */
+const PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+];
+
+async function fetchWithFallback(url) {
+  let lastErr = null;
+  for (let i=0;i<PROXIES.length;i++) {
+    try {
+      const res = await fetch(PROXIES[i](url));
+      if (res.ok) return res;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("All proxies failed");
+}
+
 async function fetchYahooOHLC(symbol, range=DEFAULT_RANGE, interval="1d") {
   const ySym = symbol.toUpperCase() + ".NS";
   const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?range=${range}&interval=${interval}`;
-  const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`;
-  const res = await fetch(proxied);
-  if (!res.ok) throw new Error("Yahoo fetch failed: " + res.status);
+  const res = await fetchWithFallback(yUrl);
   const json = await res.json();
   const result = json?.chart?.result?.[0];
   if (!result) throw new Error("कोई data नहीं मिला");
   const ts = result.timestamp || [];
-  const q = result.indicators?.quote?.[0] || {};
+  const q  = result.indicators?.quote?.[0] || {};
   const rows = [];
   for (let i=0; i<ts.length; i++) {
-    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i], v = q.volume?.[i] || 0;
-    if (o==null || h==null || l==null || c==null) continue;
-    const date = new Date(ts[i]*1000);
-    rows.push({ date, open:o, high:h, low:l, close:c, vol:v, ts: ts[i]*1000 });
+    const o=q.open?.[i], h=q.high?.[i], l=q.low?.[i], c=q.close?.[i], v=q.volume?.[i]||0;
+    if (o==null||h==null||l==null||c==null) continue;
+    rows.push({ date:new Date(ts[i]*1000), open:o, high:h, low:l, close:c, vol:v, ts:ts[i]*1000 });
   }
   rows.sort((a,b)=>a.ts-b.ts);
-  if (rows.length < 10) throw new Error("कम data मिला ("+rows.length+" rows)");
+  if (rows.length < 30) throw new Error("कम data मिला ("+rows.length+" rows)");
   return rows;
 }
 
-// ---------- Date Range Filter ----------
-function filterRowsByDate(rows, fromStr, toStr) {
-  if (!fromStr && !toStr) return rows;
-  const from = fromStr ? new Date(fromStr + "T00:00:00") : null;
-  const to = toStr ? new Date(toStr + "T23:59:59") : null;
-  return rows.filter(r => {
-    if (from && r.date < from) return false;
-    if (to && r.date > to) return false;
-    return true;
-  });
+/* ================================================================
+   RULE 5: BOH FILTER (Bottom Out Hunting)
+   ================================================================ */
+function checkBOH(rows) {
+  if (!rows || rows.length < 60) {
+    return { suitable:false, reason:"Data kam", cmp:null, high52:null, low52:null, pctFromLow:null, pctFromHigh:null, pct1M:null };
+  }
+  const last252 = rows.slice(-252);
+  const cmp   = rows[rows.length-1].close;
+  const high52 = Math.max(...last252.map(r=>r.high));
+  const low52  = Math.min(...last252.map(r=>r.low));
+  const pctFromLow  = ((cmp - low52)  / low52)  * 100;
+  const pctFromHigh = ((high52 - cmp) / high52) * 100;
+
+  // 1-Month return (~22 trading days)
+  const oneMAgo = rows[Math.max(0, rows.length-22)]?.close || cmp;
+  const pct1M = ((cmp - oneMAgo) / oneMAgo) * 100;
+
+  // BOH PASS conditions:
+  // - Price at least 5% above 52W low (bottomed out & rising)
+  // - Not more than 45% below 52W high (not in steep crash)
+  // - 1M return > -3% (not actively falling)
+  const cond1 = pctFromLow >= 5;
+  const cond2 = pctFromHigh <= 45;
+  const cond3 = pct1M > -3;
+  const suitable = cond1 && cond2 && cond3;
+
+  let reason = "PASS";
+  if (!cond1) reason = "52W Low के बहुत करीब";
+  else if (!cond2) reason = "52W High से बहुत गिरा";
+  else if (!cond3) reason = "1M trend negative";
+
+  return { suitable, reason, cmp, high52, low52, pctFromLow, pctFromHigh, pct1M };
 }
 
+/* ================================================================
+   CSV PARSE
+   ================================================================ */
 function parseCSV(raw) {
-  if (!raw?.trim()) return { error: "CSV खाली है।" };
+  if (!raw?.trim()) return { error:"CSV खाली है।" };
   const lines = raw.trim().split("\n").map(l=>l.trim()).filter(Boolean);
   let hIdx = -1, stockName = "";
   for (let i=0;i<Math.min(lines.length,10);i++) {
@@ -205,16 +251,19 @@ function parseCSV(raw) {
     if (isNaN(date.getTime())) continue;
     const high=parseFloat(p[hi]), low=parseFloat(p[li]);
     const close = ci>=0 ? parseFloat(p[ci]) : high;
-    const open = oi>=0 ? parseFloat(p[oi]) : close;
-    const vol = vi>=0 ? parseInt(p[vi])||0 : 0;
+    const open  = oi>=0 ? parseFloat(p[oi]) : close;
+    const vol   = vi>=0 ? parseInt(p[vi])||0 : 0;
     if (isNaN(high)||isNaN(low)) continue;
-    rows.push({ date, open, high, low, close, vol, ts: date.getTime() });
+    rows.push({ date, open, high, low, close, vol, ts:date.getTime() });
   }
   rows.sort((a,b)=>a.ts-b.ts);
-  if (rows.length < 10) return { error: "कम से कम 10 rows चाहिए।" };
+  if (rows.length < 30) return { error:"कम से कम 30 rows चाहिए।" };
   return { stockName, rows };
 }
 
+/* ================================================================
+   WEEK KEY
+   ================================================================ */
 function isoWeekKey(d) {
   const t = new Date(d); t.setHours(0,0,0,0);
   const day = t.getDay() || 7;
@@ -224,17 +273,48 @@ function isoWeekKey(d) {
   return t.getFullYear()+"-W"+String(wk).padStart(2,"0");
 }
 
-function calcWeekly(rows, sourceKey="1w") {
+/* ================================================================
+   DATE RANGE FILTER
+   ================================================================ */
+function filterRowsByDate(rows, fromStr, toStr) {
+  if (!fromStr && !toStr) return rows;
+  const from = fromStr ? new Date(fromStr + "T00:00:00") : null;
+  const to   = toStr   ? new Date(toStr   + "T23:59:59") : null;
+  return rows.filter(r => {
+    if (from && r.date < from) return false;
+    if (to   && r.date > to)   return false;
+    return true;
+  });
+}
+
+/* ================================================================
+   CORE BACKTEST ENGINE
+   ----------------------------------------------------------------
+   Implements all 5 rules:
+   1. Capital in 6 parts -> one part per trigger hit
+   2. Buy at Previous-Week High (GTT)
+   3. Skip week if trigger within ±2.75% of last buy
+   4. Exit at avg-price + 6%
+   5. (BOH filter is applied BEFORE feeding data to engine)
+   ================================================================ */
+function calcWeekly(rows, sourceKey="1w", totalCapital=DEFAULT_CAPITAL) {
+  const perPart = totalCapital / PARTS;
+
   const enriched = rows.map(r => ({ ...r, wk: isoWeekKey(r.date), events: [] }));
+
+  // Weekly high / low per ISO week
   const wkHigh = {}, wkLow = {};
   enriched.forEach(r => {
     if (wkHigh[r.wk]==null || r.high>wkHigh[r.wk]) wkHigh[r.wk]=r.high;
     if (wkLow [r.wk]==null || r.low <wkLow [r.wk]) wkLow [r.wk]=r.low;
   });
+
   const wks = [...new Set(enriched.map(r=>r.wk))];
   const lookback = sourceKey === "2w" ? 2 : sourceKey === "4w" ? 4 : 1;
+
+  // Rule 2: Trigger = highest high of previous N-week(s)
   const wkTrigger = {};
-  wks.forEach((w,i)=>{
+  wks.forEach((w,i) => {
     if (i < lookback) { wkTrigger[w] = null; return; }
     let mx = -Infinity;
     for (let j = i-lookback; j < i; j++) {
@@ -242,59 +322,120 @@ function calcWeekly(rows, sourceKey="1w") {
     }
     wkTrigger[w] = mx === -Infinity ? null : mx;
   });
-  const rowsOut = enriched.map(r => ({ ...r, wkTrigger: wkTrigger[r.wk], buyPrice: null, position: null }));
+
+  const rowsOut = enriched.map(r => ({ ...r, wkTrigger: wkTrigger[r.wk], buyPrice:null, position:null }));
+
   let state = "IDLE";
-  let shares=0, cost=0, avg=0, target=0;
+  let shares=0, cost=0, avg=0, target=0, partsUsed=0;
   let lastBuyTrig=null, entryDate=null, entryIdx=-1;
   const trades = [];
   let curWk=null, boughtThisWeek=false, ignoredThisWeek=false, soldThisWeek=false;
+
   for (let i=0;i<rowsOut.length;i++) {
     const r = rowsOut[i];
     const trig = wkTrigger[r.wk];
+
+    // ---- Week boundary ----
     if (r.wk !== curWk) {
-      curWk = r.wk; boughtThisWeek=false; ignoredThisWeek=false; soldThisWeek=false;
+      curWk = r.wk;
+      boughtThisWeek = false;
+      ignoredThisWeek = false;
+      soldThisWeek = false;
+
+      // Rule 3: ±2.75% Ignorable Range check
       if (state==="IN_POSITION" && lastBuyTrig!=null && trig!=null) {
         const diff = Math.abs(trig-lastBuyTrig)/lastBuyTrig;
-        if (diff <= IGNORE_PCT) { ignoredThisWeek = true; r.events.push("ignore"); }
+        if (diff <= IGNORE_PCT) {
+          ignoredThisWeek = true;
+          r.events.push("ignore");
+        }
       }
     }
+
     if (trig == null) continue;
+
+    // ---- Rule 4: Target hit check (before new buy) ----
     if (state==="IN_POSITION" && r.high >= target - 0.0001) {
       const exitPrice = target;
       const pnl = shares*exitPrice - cost;
-      trades.push({ entryDate, exitDate: r.date, entry: lastBuyTrig, exit: exitPrice, days: i-entryIdx, shares, cost, proceeds: shares*exitPrice, pnl, pct: (exitPrice/avg-1)*100 });
+      trades.push({
+        entryDate, exitDate: r.date, entry: lastBuyTrig, exit: exitPrice,
+        days: i-entryIdx, shares, cost,
+        proceeds: shares*exitPrice, pnl,
+        pct: (exitPrice/avg-1)*100,
+        partsUsed
+      });
       r.events.push("target");
-      state="IDLE"; shares=0; cost=0; avg=0; target=0;
-      lastBuyTrig=null; entryDate=null; entryIdx=-1; soldThisWeek = true;
+      state="IDLE"; shares=0; cost=0; avg=0; target=0; partsUsed=0;
+      lastBuyTrig=null; entryDate=null; entryIdx=-1;
+      soldThisWeek = true;
       continue;
     }
-    if (!boughtThisWeek && !ignoredThisWeek && !soldThisWeek && r.low<=trig && trig<=r.high) {
-      const qty = trig >= QTY_THRESHOLD ? QTY_HIGH : QTY_LOW;
-      shares += qty; cost += qty*trig; avg = cost/shares; target = avg*(1+TARGET_PCT);
+
+    // ---- Rule 1 + 2 + 3: Buy one part on trigger hit ----
+    const canBuy = !boughtThisWeek && !ignoredThisWeek && !soldThisWeek
+                   && partsUsed < PARTS
+                   && r.low <= trig && trig <= r.high;
+
+    if (canBuy) {
+      // Rule 1: allocate exactly ONE PART of capital
+      let qty = Math.floor(perPart / trig);
+      if (qty < 1) qty = 1;   // minimum 1 share
+
+      shares += qty;
+      cost   += qty * trig;
+      avg     = cost / shares;
+      target  = avg * (1 + TARGET_PCT);   // Rule 4
+      partsUsed++;
+
       if (state==="IDLE") { entryDate = r.date; entryIdx = i; }
-      state = "IN_POSITION"; lastBuyTrig = trig; boughtThisWeek = true;
-      r.events.push("buy"); r.buyPrice = trig;
-      r.position = { avg, target, shares };
+      state = "IN_POSITION";
+      lastBuyTrig = trig;
+      boughtThisWeek = true;
+
+      r.events.push("buy");
+      r.buyPrice = trig;
+      r.position = { avg, target, shares, qty, partsUsed };
+
+      // Same-day target hit?
       if (r.high >= target - 0.0001) {
         const exitPrice = target;
         const pnl = shares*exitPrice - cost;
-        trades.push({ entryDate, exitDate: r.date, entry: trig, exit: exitPrice, days: i-entryIdx, shares, cost, proceeds: shares*exitPrice, pnl, pct: (exitPrice/avg-1)*100 });
+        trades.push({
+          entryDate, exitDate: r.date, entry: trig, exit: exitPrice,
+          days: i-entryIdx, shares, cost,
+          proceeds: shares*exitPrice, pnl,
+          pct: (exitPrice/avg-1)*100,
+          partsUsed
+        });
         r.events.push("target");
-        state="IDLE"; shares=0; cost=0; avg=0; target=0;
-        lastBuyTrig=null; entryDate=null; entryIdx=-1; soldThisWeek = true;
+        state="IDLE"; shares=0; cost=0; avg=0; target=0; partsUsed=0;
+        lastBuyTrig=null; entryDate=null; entryIdx=-1;
+        soldThisWeek = true;
       }
     }
   }
+
   let openPosition = null;
   if (state==="IN_POSITION") {
     const last = rowsOut[rowsOut.length-1];
-    openPosition = { shares, avg, target, lastBuyTrig, entryDate, mark: last.close, unrealized: shares*last.close - cost };
+    openPosition = {
+      shares, avg, target, lastBuyTrig, entryDate,
+      mark: last.close,
+      unrealized: shares*last.close - cost,
+      cost, partsUsed
+    };
   }
+
   const lastWk = wks[wks.length-1];
-  const pendingTrigger = wkHigh[lastWk];
-  return { rows: rowsOut, trades, openPosition, pendingTrigger };
+  const pendingTrigger = wkHigh[lastWk];   // next week's trigger
+
+  return { rows: rowsOut, trades, openPosition, pendingTrigger, perPart };
 }
 
+/* ================================================================
+   MINI CHART
+   ================================================================ */
 function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   const [hover, setHover] = useState(null);
   const W=800, H=height, PAD={l:54,r:10,t:20,b:30};
@@ -311,6 +452,7 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   const yLabels=Array.from({length:yticks+1},(_,i)=>minV+(range*i/yticks));
   const xticks=Math.min(6,rows.length);
   const xIdx=Array.from({length:xticks},(_,i)=>Math.floor(i*(rows.length-1)/(xticks-1||1)));
+
   const trigSegs=[]; let cur=null;
   rows.forEach(r=>{
     const t=r.wkTrigger; if(t==null) return;
@@ -318,6 +460,7 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
     else cur.x2=x(r.ts);
   });
   if(cur)trigSegs.push(cur);
+
   return (
     <div style={{overflowX:"auto"}}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",minWidth:340,height:H,display:"block"}} onMouseLeave={()=>setHover(null)}>
@@ -346,9 +489,9 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
           <div style={{fontWeight:700,color:"#a0bde0"}}>{fmtD(hover.date)}</div>
           <div style={{color:"#60a5fa"}}>Close: ₹{fmtN(hover.close)}</div>
           {hover.wkTrigger && <div style={{color:"#fbbf24"}}>Trigger ({sourceLabel}): ₹{fmtN(hover.wkTrigger)}</div>}
-          {hover.events?.includes("ignore") && <div style={{color:"#64748b",fontWeight:700}}>⚠ IGNORED</div>}
-          {hover.events?.includes("buy") && <div style={{color:"#4ade80",fontWeight:700}}>✅ BUY @ ₹{fmtN(hover.buyPrice)}</div>}
-          {hover.position && !hover.events?.includes("target") && <div style={{color:"#93c5fd"}}>🎯 Target ₹{fmtN(hover.position.target)}</div>}
+          {hover.events?.includes("ignore") && <div style={{color:"#64748b",fontWeight:700}}>⚠ IGNORED (±2.75%)</div>}
+          {hover.events?.includes("buy") && <div style={{color:"#4ade80",fontWeight:700}}>✅ BUY {hover.position?.qty} sh @ ₹{fmtN(hover.buyPrice)}</div>}
+          {hover.position && !hover.events?.includes("target") && <div style={{color:"#93c5fd"}}>🎯 Target ₹{fmtN(hover.position.target)} · Parts {hover.position.partsUsed}/6</div>}
           {hover.events?.includes("target") && <div style={{color:"#a855f7",fontWeight:700}}>🎯 TARGET HIT</div>}
         </div>
       )}
@@ -362,22 +505,36 @@ function MiniChart({ rows, sourceLabel="1W", height=300 }) {
   );
 }
 
-function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress }) {
+/* ================================================================
+   STOCKS LIST MODAL (with live BOH badge)
+   ================================================================ */
+function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress, bohCache, totalCapital }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
-  const filtered = STOCKS_DB.filter(s => {
-    if (filter === "S" && s.out !== "S") return false;
-    if (filter === "A" && s.out !== "A") return false;
+
+  const enriched = STOCKS_DB.map(s => {
+    const boh = bohCache[s.sym];
+    return { ...s, boh };
+  });
+
+  const filtered = enriched.filter(s => {
+    if (filter === "S" && !(s.boh?.suitable)) return false;
+    if (filter === "A" && s.boh?.suitable) return false;
+    if (filter === "?" && s.boh) return false;
     if (!q) return true;
     const ql = q.toLowerCase();
     return s.sym.toLowerCase().includes(ql) || s.name.toLowerCase().includes(ql);
   });
-  const sCount = STOCKS_DB.filter(s=>s.out==="S").length;
-  const aCount = STOCKS_DB.filter(s=>s.out==="A").length;
+
+  const sCount = enriched.filter(s=>s.boh?.suitable).length;
+  const aCount = enriched.filter(s=>s.boh && !s.boh.suitable).length;
+  const uCount = enriched.filter(s=>!s.boh).length;
+
   const C = {
     bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb",
     muted:"#64748b", text:"#dce8f8", suit:"#4ade80", avoid:"#f87171"
   };
+
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"flex-end",zIndex:200}}
       onClick={e=>e.currentTarget===e.target && onClose()}>
@@ -386,11 +543,15 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
           <div>
             <div style={{fontWeight:700,fontSize:16}}>📋 Stocks List</div>
             <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-              {STOCKS_DB.length} stocks · <span style={{color:C.suit}}>{sCount} Suitable</span> · <span style={{color:C.avoid}}>{aCount} Avoid</span>
+              {STOCKS_DB.length} stocks · <span style={{color:C.suit}}>{sCount} Suitable</span> · <span style={{color:C.avoid}}>{aCount} Avoid</span> · <span style={{color:C.muted}}>{uCount} unchecked</span>
+            </div>
+            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+              💰 Per part: ₹{inr(totalCapital/PARTS)} (capital ₹{inr(totalCapital)} ÷ 6)
             </div>
           </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>×</button>
         </div>
+
         <button onClick={autoLoadAll} disabled={!!autoProgress}
           style={{
             background: autoProgress ? "#1e3352" : "linear-gradient(135deg,#2563eb,#7c3aed)",
@@ -400,12 +561,19 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
           }}>
           {autoProgress
             ? `⏳ Loading ${autoProgress.done}/${autoProgress.total} — ${autoProgress.current}...`
-            : `🚀 Load All Suitable (${sCount} stocks) — Auto`}
+            : `🚀 Auto-load ${sCount>0 ? `${sCount} Suitable` : "& check BOH"} stocks`}
         </button>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search: RELIANCE, INFY, HDFC..."
+
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search: RELIANCE, INFY..."
           style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",outline:"none",marginBottom:8}}/>
-        <div style={{display:"flex",gap:6,marginBottom:10}}>
-          {[["all","All",STOCKS_DB.length],["S","✅ Suitable",sCount],["A","⛔ Avoid",aCount]].map(([k,l,n])=>(
+
+        <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+          {[
+            ["all","All",STOCKS_DB.length],
+            ["S","✅ Suitable",sCount],
+            ["A","⛔ Avoid",aCount],
+            ["?","❓ Unchecked",uCount],
+          ].map(([k,l,n])=>(
             <button key={k} onClick={()=>setFilter(k)} style={{
               background: filter===k ? C.accent : "none",
               color: filter===k ? "#fff" : C.muted,
@@ -414,30 +582,38 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
             }}>{l} ({n})</button>
           ))}
         </div>
+
         <div style={{overflowY:"auto",flex:1,margin:"0 -8px",padding:"0 8px"}}>
           {filtered.length===0 && <div style={{textAlign:"center",color:C.muted,padding:40}}>कोई stock नहीं मिला।</div>}
           {filtered.map(s => {
             const isLoading = loadingSym === s.sym;
+            const boh = s.boh;
+            const badge = boh
+              ? (boh.suitable
+                  ? { txt:"Suitable", c:C.suit, bg:"rgba(74,222,128,.12)", bd:"#166534" }
+                  : { txt:"Avoid",    c:C.avoid,bg:"rgba(248,113,113,.12)",bd:"#7f1d1d" })
+              : { txt:"Unchecked",c:C.muted,bg:"rgba(100,116,139,.12)",bd:"#334155" };
             return (
               <div key={s.sym} onClick={()=>!isLoading && !autoProgress && onPick(s)}
                 style={{background:C.card,border:`1px solid ${isLoading ? C.accent : C.border}`,borderRadius:10,padding:"10px 12px",marginBottom:8,cursor:(isLoading||autoProgress)?"wait":"pointer",display:"flex",alignItems:"center",gap:10,opacity: autoProgress && !isLoading ? 0.5 : 1}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
                     <span style={{color:"#93c5fd",fontWeight:700,fontSize:13,fontFamily:"monospace"}}>{s.sym}</span>
-                    <span style={{
-                      background: s.out==="S" ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",
-                      color: s.out==="S" ? C.suit : C.avoid,
-                      border: `1px solid ${s.out==="S" ? "#166534" : "#7f1d1d"}`,
-                      borderRadius:20, padding:"1px 8px", fontSize:10, fontWeight:700
-                    }}>{s.out==="S" ? "Suitable" : "Avoid"}</span>
+                    <span style={{background:badge.bg,color:badge.c,border:`1px solid ${badge.bd}`,borderRadius:20,padding:"1px 8px",fontSize:10,fontWeight:700}}>{badge.txt}</span>
                     {isLoading && <span className="spin" style={{color:C.accent}}>⟳</span>}
                   </div>
                   <div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
-                  <div style={{display:"flex",gap:12,marginTop:5,fontSize:11,color:"#94a3b8",flexWrap:"wrap"}}>
-                    <span>CMP: <b style={{color:"#e2e8f0"}}>₹{s.cmp.toLocaleString("en-IN")}</b></span>
-                    <span>52H: <b style={{color:C.avoid}}>₹{s.h.toLocaleString("en-IN")}</b></span>
-                    <span>52L: <b style={{color:C.suit}}>₹{s.l.toLocaleString("en-IN")}</b></span>
-                  </div>
+                  {boh && boh.cmp && (
+                    <div style={{display:"flex",gap:12,marginTop:5,fontSize:11,color:"#94a3b8",flexWrap:"wrap"}}>
+                      <span>CMP: <b style={{color:"#e2e8f0"}}>₹{inr(boh.cmp)}</b></span>
+                      <span>52L: <b style={{color:C.suit}}>₹{inr(boh.low52)}</b> <span style={{color:C.muted}}>(+{boh.pctFromLow.toFixed(1)}%)</span></span>
+                      <span>52H: <b style={{color:C.avoid}}>₹{inr(boh.high52)}</b> <span style={{color:C.muted}}>(-{boh.pctFromHigh.toFixed(1)}%)</span></span>
+                      <span>1M: <b style={{color: boh.pct1M>=0 ? C.suit : C.avoid}}>{boh.pct1M.toFixed(1)}%</b></span>
+                    </div>
+                  )}
+                  {boh && !boh.suitable && boh.reason && boh.reason!=="PASS" && (
+                    <div style={{fontSize:10,color:C.avoid,marginTop:3}}>⛔ {boh.reason}</div>
+                  )}
                 </div>
                 <div style={{color:"#334a6a",fontSize:18}}>{isLoading?"⟳":"›"}</div>
               </div>
@@ -449,6 +625,9 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
   );
 }
 
+/* ================================================================
+   MAIN APP
+   ================================================================ */
 function App() {
   const [stocks, setStocks] = useState([]);
   const [active, setActive] = useState(0);
@@ -463,69 +642,85 @@ function App() {
   const [toast, setToast] = useState(null);
   const [triggerSource, setTriggerSource] = useState("1w");
   const [range, setRange] = useState(DEFAULT_RANGE);
+  const [totalCapital, setTotalCapital] = useState(DEFAULT_CAPITAL);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [exportOpen, setExportOpen] = useState(false);
+  const [bohCache, setBohCache] = useState({});   // symbol -> BOH result
 
   function showToast(msg, type="info") {
     setToast({msg, type});
     setTimeout(()=>setToast(null), 3000);
   }
 
-  // सारे loaded stocks recompute (trigger source या date range बदलने पर)
-  function recomputeAll(newSource, newFrom, newTo) {
+  /* ------ Recompute all loaded stocks (source / capital / date change) ------ */
+  function recomputeAll(newSource, newFrom, newTo, newCapital) {
     setStocks(prev => prev.map(s => {
       if (!s.rawRows) return s;
       const filtered = filterRowsByDate(s.rawRows, newFrom, newTo);
       if (filtered.length < 5) {
-        return { name: s.name, rawRows: s.rawRows, rows: [], trades: [], openPosition: null, pendingTrigger: null };
+        return { name:s.name, rawRows:s.rawRows, rows:[], trades:[], openPosition:null, pendingTrigger:null };
       }
-      const res = calcWeekly(filtered, newSource);
-      return { name: s.name, rawRows: s.rawRows, ...res };
+      const res = calcWeekly(filtered, newSource, newCapital);
+      return { name:s.name, rawRows:s.rawRows, ...res };
     }));
   }
 
   function changeTriggerSource(newSource) {
     setTriggerSource(newSource);
-    recomputeAll(newSource, dateFrom, dateTo);
+    recomputeAll(newSource, dateFrom, dateTo, totalCapital);
     const lbl = TRIGGER_SOURCES.find(t=>t.key===newSource)?.label || newSource;
     showToast(`✅ Trigger: ${lbl}`, "success");
   }
 
+  function changeCapital(newCapital) {
+    setTotalCapital(newCapital);
+    recomputeAll(triggerSource, dateFrom, dateTo, newCapital);
+  }
+
   function applyDateRange() {
-    recomputeAll(triggerSource, dateFrom, dateTo);
-    if (dateFrom || dateTo) {
-      showToast(`📅 Date range apply: ${dateFrom || "start"} → ${dateTo || "end"}`, "success");
-    } else {
-      showToast(`📅 Date filter हटाया`, "success");
-    }
+    recomputeAll(triggerSource, dateFrom, dateTo, totalCapital);
+    showToast(`📅 Date range: ${dateFrom||"start"} → ${dateTo||"end"}`, "success");
   }
 
   function resetDateRange() {
     setDateFrom(""); setDateTo("");
-    recomputeAll(triggerSource, "", "");
+    recomputeAll(triggerSource, "", "", totalCapital);
     showToast(`📅 Date filter reset`, "success");
   }
 
-  async function addStockAuto(stock) {
+  /* ------ Add stock with auto-fetch + BOH check ------ */
+  async function addStockAuto(stock, skipBOH=false) {
     setLoadingSym(stock.sym);
     try {
-      const rows = await fetchYahooOHLC(stock.sym, range);
-      const filtered = filterRowsByDate(rows, dateFrom, dateTo);
-      const res = calcWeekly(filtered, triggerSource);
+      const rawRows = await fetchYahooOHLC(stock.sym, range);
+
+      // Rule 5: BOH filter
+      const boh = checkBOH(rawRows);
+      setBohCache(prev => ({ ...prev, [stock.sym]: boh }));
+
+      if (!skipBOH && !boh.suitable) {
+        showToast(`⚠ ${stock.sym} BOH fail: ${boh.reason}`, "error");
+      } else if (!skipBOH) {
+        showToast(`✅ ${stock.sym} BOH pass · ${rawRows.length} days`, "success");
+      } else {
+        showToast(`✅ ${stock.sym} loaded (BOH skipped) · ${rawRows.length} days`, "success");
+      }
+
+      const filtered = filterRowsByDate(rawRows, dateFrom, dateTo);
+      const res = calcWeekly(filtered, triggerSource, totalCapital);
+
       setStocks(p => {
-        const exists = p.findIndex(x => x.name === "NSE:"+stock.sym);
-        const newStock = { name: "NSE:"+stock.sym, rawRows: rows, ...res };
-        if (exists >= 0) {
-          const copy = [...p]; copy[exists] = newStock; return copy;
-        }
-        return [...p, newStock];
+        const name = "NSE:"+stock.sym;
+        const idx = p.findIndex(x => x.name === name);
+        const newStock = { name, rawRows, ...res, boh };
+        const next = idx >= 0
+          ? p.map((x,j)=> j===idx ? newStock : x)
+          : [...p, newStock];
+        // set active properly (inside updater to avoid stale)
+        setActive(idx >= 0 ? idx : next.length-1);
+        return next;
       });
-      setActive(prev => {
-        const idx = stocks.findIndex(x => x.name === "NSE:"+stock.sym);
-        return idx >= 0 ? idx : stocks.length;
-      });
-      showToast(`✅ ${stock.sym} loaded (${filtered.length} days)`, "success");
+
       setLoadingSym(null);
       return true;
     } catch (e) {
@@ -540,44 +735,60 @@ function App() {
     if (ok) setListOpen(false);
   }
 
+  /* ------ Load all stocks + auto-check BOH ------ */
   async function autoLoadAll() {
-    const suitable = STOCKS_DB.filter(s => s.out === "S");
-    setAutoProgress({ done: 0, total: suitable.length, current: "" });
-    const newStocks = [];
-    for (let i=0; i<suitable.length; i++) {
-      const st = suitable[i];
-      setAutoProgress({ done: i, total: suitable.length, current: st.sym });
+    // Pass 1: fetch all + BOH check
+    setAutoProgress({ done:0, total: STOCKS_DB.length, current:"" });
+    const allData = [];
+    for (let i=0; i<STOCKS_DB.length; i++) {
+      const st = STOCKS_DB[i];
+      setAutoProgress({ done:i, total:STOCKS_DB.length, current: st.sym });
       try {
-        const rows = await fetchYahooOHLC(st.sym, range);
-        const filtered = filterRowsByDate(rows, dateFrom, dateTo);
-        const res = calcWeekly(filtered, triggerSource);
-        newStocks.push({ name: "NSE:"+st.sym, rawRows: rows, ...res });
-      } catch (e) {}
-      await new Promise(r => setTimeout(r, 200));
+        const rawRows = await fetchYahooOHLC(st.sym, range);
+        const boh = checkBOH(rawRows);
+        allData.push({ sym: st.sym, rawRows, boh });
+      } catch (e) { /* skip */ }
+      await new Promise(r => setTimeout(r, 150));
     }
+
+    // Update bohCache
+    const newCache = {};
+    allData.forEach(d => { newCache[d.sym] = d.boh; });
+    setBohCache(prev => ({ ...prev, ...newCache }));
+
+    // Pass 2: only load suitable stocks into main view
+    const suitable = allData.filter(d => d.boh.suitable);
+    const newStocks = suitable.map(d => ({
+      name: "NSE:"+d.sym,
+      rawRows: d.rawRows,
+      ...calcWeekly(filterRowsByDate(d.rawRows, dateFrom, dateTo), triggerSource, totalCapital),
+      boh: d.boh
+    }));
+
     setStocks(prev => {
       const merged = [...prev];
       newStocks.forEach(ns => {
         const idx = merged.findIndex(x => x.name === ns.name);
-        if (idx >= 0) merged[idx] = ns;
-        else merged.push(ns);
+        if (idx >= 0) merged[idx] = ns; else merged.push(ns);
       });
       return merged;
     });
     setAutoProgress(null);
-    showToast(`🚀 ${newStocks.length} stocks loaded`, "success");
+    showToast(`🚀 ${suitable.length} BOH-suitable stocks loaded (out of ${allData.length} fetched)`, "success");
     setListOpen(false);
     setActive(0);
   }
 
+  /* ------ CSV add ------ */
   function handleAdd(csvRaw, lbl) {
     setErr("");
     const parsed = parseCSV(csvRaw);
     if (parsed.error) { setErr(parsed.error); return false; }
+    const boh = checkBOH(parsed.rows);
     const filtered = filterRowsByDate(parsed.rows, dateFrom, dateTo);
-    const res = calcWeekly(filtered, triggerSource);
+    const res = calcWeekly(filtered, triggerSource, totalCapital);
     const name = lbl?.trim() || parsed.stockName || `Stock ${stocks.length+1}`;
-    setStocks(p => [...p, { name, rawRows: parsed.rows, ...res }]);
+    setStocks(p => [...p, { name, rawRows: parsed.rows, ...res, boh }]);
     setActive(stocks.length);
     return true;
   }
@@ -598,138 +809,40 @@ function App() {
     rd.readAsText(f);
   }
 
-  // ---------- Export CSV ----------
+  /* ------ Export CSV ------ */
   function exportTradesCSV() {
-    if (!stocks.length) { showToast("कोई stock loaded नहीं है", "error"); return; }
+    if (!stocks.length) { showToast("कोई stock loaded नहीं", "error"); return; }
     const lines = [];
-    lines.push("# Weekly Trigger Backtest Export");
+    lines.push("# Darvas Box Weekly Trigger Export");
     lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
     lines.push(`# Trigger: ${TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label}`);
-    lines.push(`# Date Range: ${dateFrom || "start"} → ${dateTo || "end"}`);
+    lines.push(`# Capital: ₹${totalCapital} (per part ₹${totalCapital/PARTS})`);
+    lines.push(`# Target: ${(TARGET_PCT*100).toFixed(1)}% | Ignore: ±${(IGNORE_PCT*100).toFixed(2)}%`);
     lines.push("");
-    lines.push("Stock,Entry Date,Exit Date,Buy Price,Exit Price,Qty,Held Days,P&L,Return %");
-    let grandPnl = 0, grandTrades = 0, grandWins = 0;
-    stocks.forEach(s => {
-      const trs = s.trades || [];
-      trs.forEach(t => {
-        grandPnl += t.pnl; grandTrades++;
-        if (t.pnl > 0) grandWins++;
-        lines.push([
-          s.name,
-          fmtDISO(t.entryDate),
-          fmtDISO(t.exitDate),
-          t.entry.toFixed(2),
-          t.exit.toFixed(2),
-          t.shares,
-          t.days,
-          t.pnl.toFixed(2),
-          t.pct.toFixed(2)
-        ].join(","));
-      });
-    });
-    lines.push("");
-    lines.push("SUMMARY");
-    lines.push(`Total Stocks,${stocks.length}`);
-    lines.push(`Total Trades,${grandTrades}`);
-    lines.push(`Winning Trades,${grandWins}`);
-    lines.push(`Win Rate,${grandTrades ? ((grandWins/grandTrades)*100).toFixed(2) : 0}%`);
-    lines.push(`Total P&L,${grandPnl.toFixed(2)}`);
-    lines.push("");
-    lines.push("STOCK-WISE SUMMARY");
-    lines.push("Stock,Trades,Wins,Losses,Open Position,Total P&L");
-    stocks.forEach(s => {
-      const trs = s.trades || [];
-      const wins = trs.filter(t=>t.pnl>0).length;
-      const losses = trs.length - wins;
-      const pnl = trs.reduce((a,t)=>a+t.pnl,0);
-      const open = s.openPosition ? `${s.openPosition.shares} sh @ ₹${s.openPosition.avg.toFixed(2)}` : "—";
-      lines.push([s.name, trs.length, wins, losses, open, pnl.toFixed(2)].join(","));
-    });
-
-    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `backtest_trades_${fmtDISO(new Date())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast(`📥 CSV exported (${grandTrades} trades)`, "success");
-    setExportOpen(false);
-  }
-
-  function exportEventsCSV() {
-    const lines = [];
-    lines.push("# Weekly Trigger — Event Log Export");
-    lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
-    lines.push("");
-    lines.push("Stock,Date,Event,Close,Trigger,Buy Price,Target");
-    stocks.forEach(s => {
-      (s.rows || []).forEach(r => {
-        if (!r.events?.length) return;
-        r.events.forEach(ev => {
-          lines.push([
-            s.name,
-            fmtDISO(r.date),
-            ev,
-            r.close.toFixed(2),
-            r.wkTrigger ? r.wkTrigger.toFixed(2) : "",
-            r.buyPrice ? r.buyPrice.toFixed(2) : "",
-            r.position ? r.position.target.toFixed(2) : ""
-          ].join(","));
-        });
-      });
-    });
-    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `backtest_events_${fmtDISO(new Date())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast(`📥 Events CSV exported`, "success");
-    setExportOpen(false);
-  }
-
-  function exportPortfolioCSV() {
-    const lines = [];
-    lines.push("# Portfolio Summary");
-    lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
-    lines.push(`# Trigger: ${TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label}`);
-    lines.push("");
-    lines.push("Stock,Trades,Wins,Losses,Win %,Total P&L,Open Qty,Open Avg,Open Unrealized");
+    lines.push("Stock,Entry Date,Exit Date,Buy Price,Exit Price,Qty,Parts,Held Days,P&L,Return %");
     let gP=0, gT=0, gW=0;
-    stocks.forEach(s => {
-      const trs = s.trades || [];
-      const wins = trs.filter(t=>t.pnl>0).length;
-      const pnl = trs.reduce((a,t)=>a+t.pnl,0);
-      gP+=pnl; gT+=trs.length; gW+=wins;
+    stocks.forEach(s => (s.trades||[]).forEach(t => {
+      gP+=t.pnl; gT++; if(t.pnl>0) gW++;
       lines.push([
-        s.name, trs.length, wins, trs.length-wins,
-        trs.length ? ((wins/trs.length)*100).toFixed(1) : "0",
-        pnl.toFixed(2),
-        s.openPosition ? s.openPosition.shares : "",
-        s.openPosition ? s.openPosition.avg.toFixed(2) : "",
-        s.openPosition ? s.openPosition.unrealized.toFixed(2) : ""
+        s.name, fmtDISO(t.entryDate), fmtDISO(t.exitDate),
+        t.entry.toFixed(2), t.exit.toFixed(2), t.shares, t.partsUsed||"", t.days,
+        t.pnl.toFixed(2), t.pct.toFixed(2)
       ].join(","));
-    });
-    lines.push("");
-    lines.push(`TOTAL,${gT},${gW},${gT-gW},${gT?((gW/gT)*100).toFixed(1):0},${gP.toFixed(2)},,,`);
+    }));
+    lines.push(""); lines.push("SUMMARY");
+    lines.push(`Total Stocks,${stocks.length}`);
+    lines.push(`Total Trades,${gT}`);
+    lines.push(`Wins,${gW}`);
+    lines.push(`Win Rate,${gT?((gW/gT)*100).toFixed(2):0}%`);
+    lines.push(`Total P&L,${gP.toFixed(2)}`);
 
-    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+    const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `backtest_portfolio_${fmtDISO(new Date())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = url; a.download = `trades_${fmtDISO(new Date())}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast(`📥 Portfolio CSV exported`, "success");
-    setExportOpen(false);
+    showToast(`📥 CSV exported (${gT} trades)`, "success");
   }
 
   const s = stocks[active];
@@ -754,17 +867,24 @@ function App() {
   const wins = s ? s.trades.filter(t=>t.pnl>0).length : 0;
   const sourceLabel = TRIGGER_SOURCES.find(t=>t.key===triggerSource)?.label.split(" ")[0] || "1W";
 
-  // Overall portfolio stats
   const portfolioTrades = stocks.reduce((a,s)=>a+(s.trades?.length||0),0);
   const portfolioPnl = stocks.reduce((a,s)=>a+((s.trades||[]).reduce((x,t)=>x+t.pnl,0)),0);
-  const portfolioWins = stocks.reduce((a,s)=>a+((s.trades||[]).filter(t=>t.pnl>0).length),0);
 
   return (
     <div style={{ fontFamily:"'Inter',system-ui,sans-serif", background:C.bg, color:C.text, minHeight:"100vh", fontSize:14 }}>
-      {/* Row 1: Title + Main Controls */}
+      {/* Header */}
       <div style={{ background:C.card, padding:"10px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
         <div style={{ flex:1, minWidth:140 }}>
-          <span style={{ fontWeight:700, fontSize:15 }}>📈 Weekly Trigger Backtest</span>
+          <span style={{ fontWeight:700, fontSize:15 }}>📈 Darvas Box Backtest</span>
+          <span style={{ fontSize:10, color:C.muted, marginLeft:8 }}>5 Rules · BOH · 6 Parts</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:5,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px"}}>
+          <span style={{fontSize:11,color:C.muted}}>💰 ₹</span>
+          <input type="number" value={totalCapital} min="10000" step="10000"
+            onChange={e=>setTotalCapital(Math.max(1, parseInt(e.target.value)||0))}
+            onBlur={()=>changeCapital(totalCapital)}
+            style={{background:"none",border:"none",color:C.text,fontSize:12,width:80,outline:"none"}}/>
+          <span style={{fontSize:10,color:C.gtt}}>÷6 = ₹{inr(totalCapital/PARTS)}</span>
         </div>
         <select value={triggerSource} onChange={e=>changeTriggerSource(e.target.value)}
           style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none" }}>
@@ -787,9 +907,9 @@ function App() {
         </button>
       </div>
 
-      {/* Row 2: Date Range + Export */}
+      {/* Date range row */}
       <div style={{ background:"#0a1628", padding:"8px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
-        <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>📅 Date Range:</span>
+        <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>📅 Date:</span>
         <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
           style={{ background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 8px", fontSize:12, outline:"none" }}/>
         <span style={{ color:C.muted, fontSize:12 }}>→</span>
@@ -806,16 +926,12 @@ function App() {
           </button>
         )}
         <div style={{ flex:1 }}/>
-        <button onClick={()=>setExportOpen(true)}
-          disabled={!stocks.length}
-          style={{
-            background: stocks.length ? "linear-gradient(135deg,#16a34a,#22c55e)" : C.border,
-            color:"#fff", border:"none", borderRadius:8, padding:"5px 14px",
-            fontSize:12, fontWeight:700, cursor: stocks.length ? "pointer" : "not-allowed",
-            opacity: stocks.length ? 1 : 0.5
-          }}>
-          📥 Export CSV
-        </button>
+        {stocks.length > 0 && (
+          <button onClick={exportTradesCSV}
+            style={{ background:"linear-gradient(135deg,#16a34a,#22c55e)", color:"#fff", border:"none", borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+            📥 Export CSV
+          </button>
+        )}
       </div>
 
       {autoProgress && (
@@ -827,6 +943,7 @@ function App() {
         </div>
       )}
 
+      {/* Stock tabs */}
       {stocks.length>0 && (
         <div style={{ display:"flex", overflowX:"auto", background:C.card, borderBottom:`1px solid ${C.border}`, padding:"0 8px" }}>
           {stocks.map((st,i)=>(
@@ -837,59 +954,63 @@ function App() {
                 color: active===i ? "#93c5fd" : C.muted,
                 padding:"9px 10px", fontSize:12, fontWeight: active===i ? 700 : 400,
                 cursor:"pointer", whiteSpace:"nowrap"
-              }}>{st.name.replace("NSE:","")}</button>
+              }}>
+                {st.name.replace("NSE:","")}
+                {st.boh?.suitable && <span style={{color:C.buy, marginLeft:4, fontSize:9}}>●</span>}
+              </button>
               <button onClick={()=>removeStock(i)}
                 style={{ background:"none", border:"none", color:C.muted, cursor:"pointer", fontSize:14, padding:"0 4px 0 0", lineHeight:1 }}>×</button>
             </div>
           ))}
           {stocks.length > 1 && (
-            <div style={{
-              marginLeft:"auto", padding:"9px 12px", fontSize:11, color:C.muted,
-              whiteSpace:"nowrap", borderLeft:`1px solid ${C.border}`
-            }}>
+            <div style={{ marginLeft:"auto", padding:"9px 12px", fontSize:11, color:C.muted, whiteSpace:"nowrap", borderLeft:`1px solid ${C.border}` }}>
               📊 {stocks.length} stocks · ₹{inr(portfolioPnl)} · {portfolioTrades} trades
             </div>
           )}
         </div>
       )}
 
+      {/* Landing */}
       {!s && !autoProgress && (
         <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:18, padding:48, minHeight:"60vh", textAlign:"center" }}>
-          <div style={{ fontSize:52 }}>🚀</div>
+          <div style={{ fontSize:52 }}>📈</div>
           <div>
-            <div style={{ fontWeight:700, fontSize:20, marginBottom:6 }}>Auto Backtest — One Click</div>
-            <div style={{ color:C.muted, fontSize:13 }}>Stocks list से कोई stock चुनें — data अपने आप आ जाएगा</div>
+            <div style={{ fontWeight:700, fontSize:20, marginBottom:6 }}>Darvas Box Weekly Trigger Backtest</div>
+            <div style={{ color:C.muted, fontSize:13 }}>5 नियम · BOH Filter · 6-Part Capital Allocation</div>
           </div>
           <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
             <button onClick={()=>setListOpen(true)} style={{ background:"linear-gradient(135deg,#2563eb,#7c3aed)", color:"#fff", border:"none", borderRadius:10, padding:"13px 26px", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-              📋 Stocks List खोलें
+              📋 Stocks List
             </button>
             <button onClick={autoLoadAll} style={{ background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:10, padding:"13px 26px", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-              🚀 Load All Suitable
+              🚀 Auto-load All (BOH check)
             </button>
           </div>
-          <div style={{ ...card(), padding:"12px 18px", maxWidth:480, textAlign:"left" }}>
+          <div style={{ ...card(), padding:"12px 18px", maxWidth:520, textAlign:"left" }}>
             <div style={{ fontSize:12, color:C.muted, lineHeight:1.9 }}>
-              <b style={{color:C.text}}>Features:</b><br/>
-              📊 <b style={{color:"#93c5fd"}}>Auto-fetch</b> Yahoo Finance से (default 1 साल)<br/>
-              🎯 <b style={{color:C.gtt}}>Trigger</b>: 1W / 2W / 4W High चुनें<br/>
-              📅 <b style={{color:"#22c55e"}}>Date Range</b>: किसी specific period का backtest<br/>
-              📥 <b style={{color:"#22c55e"}}>Export CSV</b>: trades, events, portfolio download
+              <b style={{color:C.text}}>पाँचों नियम:</b><br/>
+              💰 <b style={{color:C.gtt}}>नियम 1</b>: Capital 6 भाग में · हर ट्रिगर पर 1 भाग (₹{inr(totalCapital)} ÷ 6 = ₹{inr(totalCapital/PARTS)})<br/>
+              📈 <b style={{color:"#fbbf24"}}>नियम 2</b>: पिछले हफ्ते के High पर GTT<br/>
+              🚫 <b style={{color:"#94a3b8"}}>नियम 3</b>: Last buy के ±2.75% में हो तो skip<br/>
+              🎯 <b style={{color:C.tgt}}>नियम 4</b>: Average price पर +6% target<br/>
+              🔍 <b style={{color:C.buy}}>नियम 5</b>: BOH filter (52W Low से ऊपर, गिरता नहीं)
             </div>
           </div>
         </div>
       )}
 
+      {/* Main view */}
       {s && (
         <div>
+          {/* Stat cards */}
           <div style={{ display:"flex", gap:10, padding:"14px 16px", overflowX:"auto" }}>
             {[
-              { lbl:"Total Days",   val: s.rows.length, clr: C.dim },
-              { lbl:"Closed Trades",val: s.trades.length, clr: C.buy },
-              { lbl:"Win Rate",     val: s.trades.length ? `${Math.round(wins/s.trades.length*100)}%` : "—", clr:"#93c5fd" },
-              { lbl:"Total P&L",    val:`₹${inr(totalPnL)}`, clr: totalPnL>=0 ? C.buy : "#f87171" },
-              { lbl:"Open Pos",     val: s.openPosition ? `${s.openPosition.shares} sh` : "0", clr: s.openPosition ? C.gtt : C.muted },
-              { lbl:"Latest Close", val:`₹${fmtN(last?.close)}`, clr:"#93c5fd" },
+              { lbl:"Days",          val: s.rows.length,  clr: C.dim },
+              { lbl:"Trades",        val: s.trades.length, clr: C.buy },
+              { lbl:"Win Rate",      val: s.trades.length ? `${Math.round(wins/s.trades.length*100)}%` : "—", clr:"#93c5fd" },
+              { lbl:"Total P&L",     val:`₹${inr(totalPnL)}`, clr: totalPnL>=0 ? C.buy : "#f87171" },
+              { lbl:"Parts Used",    val: s.openPosition ? `${s.openPosition.partsUsed}/${PARTS}` : "0", clr: C.gtt },
+              { lbl:"Latest Close",  val:`₹${fmtN(last?.close)}`, clr:"#93c5fd" },
             ].map((c,i)=>(
               <div key={i} style={{ ...card(), padding:"10px 16px", minWidth:100, textAlign:"center", flexShrink:0 }}>
                 <div style={{ fontSize:16, fontWeight:700, color:c.clr, fontFamily:"monospace" }}>{c.val}</div>
@@ -897,19 +1018,26 @@ function App() {
               </div>
             ))}
           </div>
+
+          {/* BOH + Status */}
           <div style={{ margin:"0 16px 12px", ...card(), padding:"10px 16px", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
             <span style={{ fontSize:11, color:C.muted }}>Status ({fmtD(last?.date)}):</span>
             <span style={{background:"#0a1628",color:"#fbbf24",border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
-              🎯 {sourceLabel} Trigger
+              🎯 {sourceLabel}
             </span>
-            {(dateFrom || dateTo) && (
-              <span style={{background:"#0a2e1a",color:"#4ade80",border:"1px solid #166534",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
-                📅 {dateFrom || "start"} → {dateTo || "end"}
+            {s.boh && (
+              <span style={{
+                background: s.boh.suitable ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",
+                color: s.boh.suitable ? C.buy : "#f87171",
+                border: `1px solid ${s.boh.suitable ? "#166534" : "#7f1d1d"}`,
+                borderRadius:6, padding:"3px 10px", fontSize:11, fontWeight:700
+              }}>
+                {s.boh.suitable ? "✅ BOH Suitable" : "⛔ "+s.boh.reason}
               </span>
             )}
             {s.openPosition ? (
               <span style={{ background:"#04130b", color:C.buy, border:"1px solid #166534", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
-                📈 HOLDING {s.openPosition.shares} @ ₹{fmtN(s.openPosition.avg)} — Target ₹{fmtN(s.openPosition.target)}
+                📈 HOLD {s.openPosition.shares} @ ₹{fmtN(s.openPosition.avg)} · Target ₹{fmtN(s.openPosition.target)} · Parts {s.openPosition.partsUsed}/6
                 <span style={{ color: s.openPosition.unrealized>=0 ? C.buy : "#f87171", marginLeft:8 }}>
                   ({s.openPosition.unrealized>=0?"+":""}₹{inr(s.openPosition.unrealized)})
                 </span>
@@ -922,6 +1050,8 @@ function App() {
               <span style={{ color:C.muted, fontSize:12 }}>⏳ IDLE</span>
             )}
           </div>
+
+          {/* View tabs */}
           <div style={{ padding:"0 16px 12px", display:"flex", gap:6, overflowX:"auto" }}>
             {views.map(v=>(
               <button key={v.key} onClick={()=>setView(v.key)} style={{
@@ -933,6 +1063,7 @@ function App() {
               }}>{v.lbl}</button>
             ))}
           </div>
+
           {view==="chart" && (
             <div style={{ padding:"0 10px 20px" }}>
               <div style={{ ...card(), padding:"10px 0" }}>
@@ -941,11 +1072,10 @@ function App() {
               </div>
             </div>
           )}
+
           {view==="trades" && (
             <div style={{ padding:"0 16px 20px", display:"flex", flexDirection:"column", gap:8 }}>
-              {s.trades.length===0 && !s.openPosition && (
-                <div style={{ color:C.muted, textAlign:"center", padding:40 }}>कोई closed trade नहीं।</div>
-              )}
+              {s.trades.length===0 && !s.openPosition && <div style={{ color:C.muted, textAlign:"center", padding:40 }}>कोई trade नहीं।</div>}
               {s.trades.map((t,i)=>(
                 <div key={i} style={{ background:"#04130b", border:"1px solid #166534", borderRadius:10, padding:"10px 14px" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, flexWrap:"wrap", gap:6 }}>
@@ -958,6 +1088,7 @@ function App() {
                     <span>Buy @ <b style={{color:C.buy}}>₹{fmtN(t.entry)}</b></span>
                     <span>Exit @ <b style={{color:C.tgt}}>₹{fmtN(t.exit)}</b></span>
                     <span>Qty: <b>{t.shares}</b></span>
+                    <span>Parts: <b>{t.partsUsed}/{PARTS}</b></span>
                     <span>Held: <b>{t.days}</b> दिन</span>
                   </div>
                 </div>
@@ -966,18 +1097,20 @@ function App() {
                 <div style={{ background:"#1c1407", border:"1px solid #78350f", borderRadius:10, padding:"10px 14px" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
                     <span style={{ color:"#fde68a", fontWeight:700, fontSize:13 }}>OPEN — {fmtD(s.openPosition.entryDate)}</span>
-                    <span style={{ background:"#1c1407", color:C.gtt, border:"1px solid #78350f", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>⏳ HOLDING</span>
+                    <span style={{ background:"#1c1407", color:C.gtt, border:"1px solid #78350f", borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>⏳ {s.openPosition.partsUsed}/6 parts</span>
                   </div>
                   <div style={{ display:"flex", gap:20, fontSize:12, color:"#94a3b8", flexWrap:"wrap" }}>
                     <span>Avg: <b style={{color:C.buy}}>₹{fmtN(s.openPosition.avg)}</b></span>
                     <span>Target: <b style={{color:C.tgt}}>₹{fmtN(s.openPosition.target)}</b></span>
                     <span>Qty: <b>{s.openPosition.shares}</b></span>
+                    <span>Cost: <b>₹{inr(s.openPosition.cost)}</b></span>
                     <span>Unreal: <b style={{color: s.openPosition.unrealized>=0 ? C.buy : "#f87171"}}>₹{inr(s.openPosition.unrealized)}</b></span>
                   </div>
                 </div>
               )}
             </div>
           )}
+
           {view==="log" && (
             <div style={{ padding:"0 16px 20px", display:"flex", flexDirection:"column", gap:8 }}>
               {events.length===0 && <div style={{ color:C.muted, textAlign:"center", padding:40 }}>कोई event नहीं।</div>}
@@ -1002,14 +1135,15 @@ function App() {
                       <span>L: ₹{fmtN(r.low)}</span>
                       <span>C: ₹{fmtN(r.close)}</span>
                       {r.wkTrigger && <span>Trigger @ <b style={{color:C.gtt}}>₹{fmtN(r.wkTrigger)}</b></span>}
-                      {r.buyPrice && <span>Bought @ <b style={{color:C.buy}}>₹{fmtN(r.buyPrice)}</b></span>}
-                      {r.position && <span>Target @ <b style={{color:C.tgt}}>₹{fmtN(r.position.target)}</b></span>}
+                      {r.buyPrice && <span>Buy {r.position?.qty} sh @ <b style={{color:C.buy}}>₹{fmtN(r.buyPrice)}</b></span>}
+                      {r.position && <span>Target @ <b style={{color:C.tgt}}>₹{fmtN(r.position.target)}</b> · Parts {r.position.partsUsed}/6</span>}
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
+
           {view==="table" && (
             <div style={{ overflowX:"auto", padding:"0 0 20px" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
@@ -1050,48 +1184,28 @@ function App() {
         </div>
       )}
 
-      {listOpen && <StocksListModal onClose={()=>setListOpen(false)} onPick={pickFromList} loadingSym={loadingSym} autoLoadAll={autoLoadAll} autoProgress={autoProgress} />}
-
-      {exportOpen && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:20}}
-          onClick={e=>e.currentTarget===e.target && setExportOpen(false)}>
-          <div style={{background:"#0d1a2a",border:`1px solid ${C.border}`,borderRadius:14,padding:20,width:"100%",maxWidth:400}}>
-            <div style={{fontWeight:700,fontSize:16,marginBottom:6}}>📥 Export CSV</div>
-            <div style={{fontSize:12,color:C.muted,marginBottom:16}}>
-              {stocks.length} stocks loaded · {portfolioTrades} trades · ₹{inr(portfolioPnl)} P&L
-            </div>
-            <button onClick={exportTradesCSV}
-              style={{width:"100%",background:"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
-              💼 Trades CSV<br/>
-              <span style={{fontSize:11,fontWeight:400,opacity:0.9}}>सारे trades + stock-wise summary</span>
-            </button>
-            <button onClick={exportEventsCSV}
-              style={{width:"100%",background:"linear-gradient(135deg,#2563eb,#3b82f6)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
-              📜 Events CSV<br/>
-              <span style={{fontSize:11,fontWeight:400,opacity:0.9}}>सारे Buy / Target / Ignore events</span>
-            </button>
-            <button onClick={exportPortfolioCSV}
-              style={{width:"100%",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>
-              📊 Portfolio CSV<br/>
-              <span style={{fontSize:11,fontWeight:400,opacity:0.9}}>सारे stocks का summary एक साथ</span>
-            </button>
-            <button onClick={()=>setExportOpen(false)}
-              style={{width:"100%",background:C.border,color:C.text,border:"none",borderRadius:10,padding:"10px",fontSize:13,cursor:"pointer",marginTop:4}}>
-              Cancel
-            </button>
-          </div>
-        </div>
+      {listOpen && (
+        <StocksListModal
+          onClose={()=>setListOpen(false)}
+          onPick={pickFromList}
+          loadingSym={loadingSym}
+          autoLoadAll={autoLoadAll}
+          autoProgress={autoProgress}
+          bohCache={bohCache}
+          totalCapital={totalCapital}
+        />
       )}
 
+      {/* CSV modal */}
       {modal && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.8)", display:"flex", alignItems:"flex-end", zIndex:100 }}
           onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""))}>
           <div style={{ background:"#0d1a2a", borderTop:`1px solid ${C.border}`, borderRadius:"18px 18px 0 0", padding:20, width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
-            <div style={{ fontWeight:700, fontSize:16, marginBottom:18 }}>📥 CSV Upload (Optional)</div>
+            <div style={{ fontWeight:700, fontSize:16, marginBottom:18 }}>📥 CSV Upload</div>
             <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>Stock का नाम</label>
             <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="जैसे: NSE:RELIANCE"
               style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:14, boxSizing:"border-box", marginBottom:14, outline:"none" }}/>
-            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>CSV File Upload</label>
+            <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>CSV File</label>
             <input type="file" accept=".csv,.txt" onChange={onFile}
               style={{ width:"100%", background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.text, fontSize:13, boxSizing:"border-box", marginBottom:10 }}/>
             <label style={{ fontSize:12, color:C.muted, display:"block", marginBottom:4 }}>या CSV Paste करें</label>
