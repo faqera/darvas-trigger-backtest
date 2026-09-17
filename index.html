@@ -11,9 +11,9 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; display: inline-block; }
 </style>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -85,11 +85,6 @@ async function fetchWithFallback(url) {
 
 /* ================================================================
    GOOGLE SHEETS FETCH — "Final List" tab
-   ----------------------------------------------------------------
-   gviz endpoint uses the sheet NAME (not gid), so tab name must match.
-   URL format:
-   https://docs.google.com/spreadsheets/d/{ID}/gviz/tq?tqx=out:json&sheet={NAME}
-   Response wraps JSON in "/*O_o*/\ngoogle.visualization...(...)"
    ================================================================ */
 async function fetchSheetStocks() {
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SHEET_NAME)}`;
@@ -124,7 +119,6 @@ async function fetchSheetStocks() {
       const k = cols.find(c => c.toLowerCase().replace(/\s+/g,"") === n.toLowerCase().replace(/\s+/g,""));
       if (k) return k;
     }
-    // partial match
     for (const n of names) {
       const k = cols.find(c => c.toLowerCase().includes(n.toLowerCase()));
       if (k) return k;
@@ -408,7 +402,7 @@ function MiniChart({ rows, sourceLabel="1W", height=280 }) {
 }
 
 /* ================================================================
-   STOCKS MODAL (uses sheet-driven list)
+   STOCKS MODAL
    ================================================================ */
 function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress, bohCache, totalCapital, stockList, sheetInfo, reloadSheet }) {
   const [q, setQ] = useState("");
@@ -551,7 +545,6 @@ function App() {
     setTimeout(()=>setToast(null), 3500);
   }
 
-  /* ---- Sheet loading ---- */
   async function loadSheet() {
     setSheetInfo(prev => ({ ...prev, loading:true, error:null }));
     try {
@@ -569,7 +562,6 @@ function App() {
 
   useEffect(() => { loadSheet(); }, []);
 
-  /* ---- Recompute ---- */
   function recomputeAll(newSource, newFrom, newTo, newCapital) {
     setStocks(prev => prev.map(s => {
       if (!s.rawRows) return s;
@@ -584,7 +576,6 @@ function App() {
   function applyDateRange() { recomputeAll(triggerSource, dateFrom, dateTo, totalCapital); showToast(`📅 Range applied`, "success"); }
   function resetDateRange() { setDateFrom(""); setDateTo(""); recomputeAll(triggerSource, "", "", totalCapital); }
 
-  /* ---- Add stock ---- */
   async function addStockAuto(stock, skipBOH=false) {
     setLoadingSym(stock.sym);
     try {
@@ -620,7 +611,6 @@ function App() {
     if (ok) setListOpen(false);
   }
 
-  /* ---- Auto-load ALL ---- */
   async function autoLoadAll() {
     const list = stockList;
     if (!list.length) { showToast("Sheet खाली है — पहले reload करें", "error"); return; }
@@ -661,7 +651,6 @@ function App() {
     setActive(0);
   }
 
-  /* ---- CSV add ---- */
   function handleAdd(csvRaw, lbl) {
     setErr("");
     const parsed = parseCSV(csvRaw);
@@ -683,7 +672,6 @@ function App() {
     rd.readAsText(f);
   }
 
-  /* ---- Export ---- */
   function exportTradesCSV() {
     if (!stocks.length) { showToast("कोई stock loaded नहीं", "error"); return; }
     const lines = [];
@@ -765,7 +753,6 @@ function App() {
         </button>
       </div>
 
-      {/* Sheet error banner */}
       {sheetInfo.error && (
         <div style={{background:"#7f1d1d", color:"#fecaca", padding:"8px 16px", fontSize:12, borderBottom:`1px solid #991b1b`}}>
           ⚠ Sheet fetch fail: <b>{sheetInfo.error}</b> — Fallback list use हो रही है। Sheet को <b>"Anyone with the link → Viewer"</b> पर सेट करें, फिर Reload दबाएँ।
@@ -1037,7 +1024,6 @@ function App() {
         />
       )}
 
-      {/* CSV modal */}
       {modal && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",display:"flex",alignItems:"flex-end",zIndex:100}}
           onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""))}>
