@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Darvas Box Backtest v3 (Sheet-driven)</title>
+<title>Darvas Box Backtest v4 (Apps Script)</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #080f1a; -webkit-tap-highlight-color: transparent; }
@@ -21,11 +21,9 @@
 const { useState, useEffect } = React;
 
 /* ================================================================
-   CONFIG — अपनी Google Sheet ID और tab name यहाँ सेट करें
+   ⚠️ यहाँ अपना Apps Script Web App URL paste करें
    ================================================================ */
-const SHEET_ID   = "1ysa9VsNUnOKIC6CLcjdEhte4wO8HJ44F49d8plH0014";
-const SHEET_NAME = "Final List";   // ← exact tab name (case-sensitive)
-const SHEET_GID  = "1899449309";   // optional fallback
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdy2MQ1rabJJktk-2WcO6J8xAQXUCLIBtmcIvdTZ9nJlFI6LicyI4bc75OuqVPJ-jB/exec";
 
 /* ================================================================
    RULES
@@ -42,9 +40,6 @@ const TRIGGER_SOURCES = [
   { key:"4w", label:"4W High (Monthly)" },
 ];
 
-/* ================================================================
-   FALLBACK LIST (अगर sheet fetch fail हो)
-   ================================================================ */
 const FALLBACK_STOCKS = [
   { sym:"RELIANCE", name:"Reliance Industries" },
   { sym:"TCS",      name:"Tata Consultancy Services" },
@@ -55,21 +50,17 @@ const FALLBACK_STOCKS = [
   { sym:"ITC",      name:"ITC" },
 ];
 
-/* ================================================================
-   HELPERS
-   ================================================================ */
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
 const fmtDISO = d => { if(!d) return ""; const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
 const fmtN = (v,d=2) => (v==null||isNaN(v)) ? "—" : Number(v).toFixed(d);
 const inr  = v => (v==null||isNaN(v)) ? "—" : Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
 
 /* ================================================================
-   PROXY FALLBACK
+   PROXY FALLBACK (सिर्फ Yahoo के लिए, Apps Script direct fetch)
    ================================================================ */
 const PROXIES = [
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
 
 async function fetchWithFallback(url) {
@@ -84,43 +75,28 @@ async function fetchWithFallback(url) {
 }
 
 /* ================================================================
-   GOOGLE SHEETS FETCH — "Final List" tab
+   FETCH FROM APPS SCRIPT — direct, no proxy needed
    ================================================================ */
 async function fetchSheetStocks() {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SHEET_NAME)}`;
-  const res = await fetchWithFallback(url);
-  const text = await res.text();
-
-  // Strip gviz wrapper
-  const m = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
-  const jsonStr = m ? m[1] : text.replace(/^[^{]*/, "");
-  const json = JSON.parse(jsonStr);
-
-  if (json.status === "error") {
-    throw new Error(json.errors?.[0]?.detailed_message || "Sheet error");
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf("PASTE_") === 0) {
+    throw new Error("Apps Script URL set नहीं किया — code के top पर APPS_SCRIPT_URL भरें");
   }
+  const res = await fetch(APPS_SCRIPT_URL);
+  if (!res.ok) throw new Error("Apps Script HTTP " + res.status);
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
 
-  const cols = json.table.cols.map(c => (c.label || c.id || "").trim());
-  const rows = json.table.rows;
+  const headers = json.headers || [];
+  const rows = json.stocks || [];
+  if (!rows.length) throw new Error("Sheet में कोई data नहीं मिला");
 
-  // Build array of objects
-  const data = rows.map(r => {
-    const o = {};
-    cols.forEach((c, i) => {
-      const cell = r.c[i];
-      o[c] = cell ? (cell.v != null ? cell.v : cell.f) : null;
-    });
-    return o;
-  });
-
-  // Try to auto-detect symbol & name columns
   const findCol = (...names) => {
     for (const n of names) {
-      const k = cols.find(c => c.toLowerCase().replace(/\s+/g,"") === n.toLowerCase().replace(/\s+/g,""));
+      const k = headers.find(h => String(h).toLowerCase().replace(/\s+/g,"") === n.toLowerCase().replace(/\s+/g,""));
       if (k) return k;
     }
     for (const n of names) {
-      const k = cols.find(c => c.toLowerCase().includes(n.toLowerCase()));
+      const k = headers.find(h => String(h).toLowerCase().includes(n.toLowerCase()));
       if (k) return k;
     }
     return null;
@@ -130,9 +106,9 @@ async function fetchSheetStocks() {
   const nameCol = findCol("name","company","stockname","description");
   const suitCol = findCol("suitable","darvas","boh","flag","status");
 
-  if (!symCol) throw new Error(`"Symbol" column नहीं मिला। मिले कॉलम: ${cols.join(", ")}`);
+  if (!symCol) throw new Error(`"Symbol" column नहीं मिला। मिले: ${headers.join(", ")}`);
 
-  const stocks = data
+  const stocks = rows
     .map(r => ({
       sym:  String(r[symCol] || "").trim().toUpperCase().replace(/\.NS$|^NSE:/i, ""),
       name: String(r[nameCol] || r[symCol] || "").trim(),
@@ -140,9 +116,8 @@ async function fetchSheetStocks() {
     }))
     .filter(s => s.sym && /^[A-Z0-9&\-]+$/.test(s.sym));
 
-  if (!stocks.length) throw new Error("Sheet में कोई valid stock नहीं मिला");
-
-  return { stocks, cols, totalRows: rows.length };
+  if (!stocks.length) throw new Error("Sheet में valid symbol नहीं मिला");
+  return { stocks, cols: headers, totalRows: rows.length };
 }
 
 /* ================================================================
@@ -169,7 +144,7 @@ async function fetchYahooOHLC(symbol, range=DEFAULT_RANGE, interval="1d") {
 }
 
 /* ================================================================
-   RULE 5: BOH FILTER
+   BOH FILTER
    ================================================================ */
 function checkBOH(rows) {
   if (!rows || rows.length < 60) {
@@ -183,17 +158,14 @@ function checkBOH(rows) {
   const pctFromHigh = ((high52 - cmp) / high52) * 100;
   const oneMAgo = rows[Math.max(0, rows.length-22)]?.close || cmp;
   const pct1M   = ((cmp - oneMAgo) / oneMAgo) * 100;
-
   const cond1 = pctFromLow >= 5;
   const cond2 = pctFromHigh <= 45;
   const cond3 = pct1M > -3;
   const suitable = cond1 && cond2 && cond3;
-
   let reason = "PASS";
   if (!cond1) reason = "52W Low के करीब";
   else if (!cond2) reason = "52W High से बहुत गिरा";
   else if (!cond3) reason = "1M trend negative";
-
   return { suitable, reason, cmp, high52, low52, pctFromLow, pctFromHigh, pct1M };
 }
 
@@ -203,7 +175,7 @@ function checkBOH(rows) {
 function parseCSV(raw) {
   if (!raw?.trim()) return { error:"CSV खाली है।" };
   const lines = raw.trim().split("\n").map(l=>l.trim()).filter(Boolean);
-  let hIdx = -1, stockName = "";
+  let hIdx = -1;
   for (let i=0;i<Math.min(lines.length,10);i++) {
     if (/^date/i.test(lines[i])) { hIdx = i; break; }
   }
@@ -227,12 +199,9 @@ function parseCSV(raw) {
   }
   rows.sort((a,b)=>a.ts-b.ts);
   if (rows.length < 30) return { error:"कम से कम 30 rows चाहिए।" };
-  return { stockName, rows };
+  return { stockName: "", rows };
 }
 
-/* ================================================================
-   WEEK KEY
-   ================================================================ */
 function isoWeekKey(d) {
   const t = new Date(d); t.setHours(0,0,0,0);
   const day = t.getDay() || 7;
@@ -339,7 +308,7 @@ function calcWeekly(rows, sourceKey="1w", totalCapital=DEFAULT_CAPITAL) {
 }
 
 /* ================================================================
-   CHART (compact)
+   CHART
    ================================================================ */
 function MiniChart({ rows, sourceLabel="1W", height=280 }) {
   const [hover, setHover] = useState(null);
@@ -407,7 +376,6 @@ function MiniChart({ rows, sourceLabel="1W", height=280 }) {
 function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgress, bohCache, totalCapital, stockList, sheetInfo, reloadSheet }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
-
   const enriched = stockList.map(s => ({ ...s, boh: bohCache[s.sym] }));
   const filtered = enriched.filter(s => {
     if (filter === "S" && !(s.boh?.suitable)) return false;
@@ -420,72 +388,45 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
   const sCount = enriched.filter(s=>s.boh?.suitable).length;
   const aCount = enriched.filter(s=>s.boh && !s.boh.suitable).length;
   const uCount = enriched.filter(s=>!s.boh).length;
-
   const C = { bg:"#080f1a", card:"#0f1e33", border:"#1e3352", accent:"#2563eb", muted:"#64748b", text:"#dce8f8", suit:"#4ade80", avoid:"#f87171" };
-
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"flex-end",zIndex:200}}
       onClick={e=>e.currentTarget===e.target && onClose()}>
       <div style={{background:"#0d1a2a",borderTop:`1px solid ${C.border}`,borderRadius:"18px 18px 0 0",padding:16,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:16}}>📋 Final List (Google Sheet)</div>
+            <div style={{fontWeight:700,fontSize:16}}>📋 Final List (Apps Script)</div>
             <div style={{fontSize:11,color:C.muted,marginTop:2}}>
               {stockList.length} stocks · <span style={{color:C.suit}}>{sCount} Suitable</span> · <span style={{color:C.avoid}}>{aCount} Avoid</span> · {uCount} unchecked
             </div>
-            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-              💰 Per part: ₹{inr(totalCapital/PARTS)}
-            </div>
+            <div style={{fontSize:10,color:C.muted,marginTop:2}}>💰 Per part: ₹{inr(totalCapital/PARTS)}</div>
           </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>×</button>
         </div>
-
         <div style={{display:"flex",gap:6,marginBottom:10}}>
           <button onClick={reloadSheet} disabled={!!sheetInfo?.loading}
-            style={{
-              flex:1, background: sheetInfo?.loading ? "#1e3352" : "#1e3a5f",
-              color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8,
-              padding:"8px 12px", fontSize:12, fontWeight:600,
-              cursor: sheetInfo?.loading ? "wait" : "pointer"
-            }}>
-            {sheetInfo?.loading ? "⟳ Loading sheet..." : "🔄 Reload from Sheet"}
+            style={{flex:1,background: sheetInfo?.loading ? "#1e3352" : "#1e3a5f",color:"#93c5fd",border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",fontSize:12,fontWeight:600,cursor: sheetInfo?.loading ? "wait" : "pointer"}}>
+            {sheetInfo?.loading ? "⟳ Loading..." : "🔄 Reload"}
           </button>
           <button onClick={autoLoadAll} disabled={!!autoProgress}
-            style={{
-              flex:2, background: autoProgress ? "#1e3352" : "linear-gradient(135deg,#2563eb,#7c3aed)",
-              color:"#fff", border:"none", borderRadius:8,
-              padding:"8px 14px", fontSize:12, fontWeight:700,
-              cursor: autoProgress ? "wait" : "pointer"
-            }}>
-            {autoProgress
-              ? `⏳ ${autoProgress.done}/${autoProgress.total} — ${autoProgress.current}...`
-              : `🚀 Fetch & BOH-check all ${stockList.length}`}
+            style={{flex:2,background: autoProgress ? "#1e3352" : "linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:12,fontWeight:700,cursor: autoProgress ? "wait" : "pointer"}}>
+            {autoProgress ? `⏳ ${autoProgress.done}/${autoProgress.total} — ${autoProgress.current}...` : `🚀 Fetch & BOH-check all ${stockList.length}`}
           </button>
         </div>
-
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search symbol / name..."
           style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",outline:"none",marginBottom:8}}/>
-
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
           {[["all","All",stockList.length],["S","✅ Suitable",sCount],["A","⛔ Avoid",aCount],["?","❓ Unchecked",uCount]].map(([k,l,n])=>(
-            <button key={k} onClick={()=>setFilter(k)} style={{
-              background: filter===k ? C.accent : "none",
-              color: filter===k ? "#fff" : C.muted,
-              border:`1px solid ${filter===k ? C.accent : C.border}`,
-              borderRadius:8, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight: filter===k?700:400
-            }}>{l} ({n})</button>
+            <button key={k} onClick={()=>setFilter(k)} style={{background: filter===k ? C.accent : "none",color: filter===k ? "#fff" : C.muted,border:`1px solid ${filter===k ? C.accent : C.border}`,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer",fontWeight: filter===k?700:400}}>{l} ({n})</button>
           ))}
         </div>
-
         <div style={{overflowY:"auto",flex:1,margin:"0 -8px",padding:"0 8px"}}>
           {filtered.length===0 && <div style={{textAlign:"center",color:C.muted,padding:40}}>कोई stock नहीं मिला।</div>}
           {filtered.map(s => {
             const isLoading = loadingSym === s.sym;
             const boh = s.boh;
             const badge = boh
-              ? (boh.suitable
-                  ? { txt:"Suitable", c:C.suit, bg:"rgba(74,222,128,.12)", bd:"#166534" }
-                  : { txt:"Avoid",    c:C.avoid,bg:"rgba(248,113,113,.12)",bd:"#7f1d1d" })
+              ? (boh.suitable ? { txt:"Suitable", c:C.suit, bg:"rgba(74,222,128,.12)", bd:"#166534" } : { txt:"Avoid", c:C.avoid,bg:"rgba(248,113,113,.12)",bd:"#7f1d1d" })
               : { txt:"Unchecked",c:C.muted,bg:"rgba(100,116,139,.12)",bd:"#334155" };
             return (
               <div key={s.sym} onClick={()=>!isLoading && !autoProgress && onPick(s)}
@@ -521,7 +462,6 @@ function StocksListModal({ onClose, onPick, loadingSym, autoLoadAll, autoProgres
 function App() {
   const [stockList, setStockList] = useState([]);
   const [sheetInfo, setSheetInfo] = useState({ loading:true, error:null, cols:[], source:"sheet" });
-
   const [stocks, setStocks] = useState([]);
   const [active, setActive] = useState(0);
   const [modal, setModal] = useState(false);
@@ -540,10 +480,7 @@ function App() {
   const [dateTo, setDateTo] = useState("");
   const [bohCache, setBohCache] = useState({});
 
-  function showToast(msg, type="info") {
-    setToast({msg, type});
-    setTimeout(()=>setToast(null), 3500);
-  }
+  function showToast(msg, type="info") { setToast({msg, type}); setTimeout(()=>setToast(null), 3500); }
 
   async function loadSheet() {
     setSheetInfo(prev => ({ ...prev, loading:true, error:null }));
@@ -556,10 +493,9 @@ function App() {
       console.error("Sheet fetch failed:", e);
       setStockList(FALLBACK_STOCKS);
       setSheetInfo({ loading:false, error:e.message, cols:[], source:"fallback" });
-      showToast(`⚠ Sheet fail: ${e.message}. Fallback use ho raha hai.`, "error");
+      showToast(`⚠ Sheet fail: ${e.message}`, "error");
     }
   }
-
   useEffect(() => { loadSheet(); }, []);
 
   function recomputeAll(newSource, newFrom, newTo, newCapital) {
@@ -582,14 +518,11 @@ function App() {
       const rawRows = await fetchYahooOHLC(stock.sym, range);
       const boh = checkBOH(rawRows);
       setBohCache(prev => ({ ...prev, [stock.sym]: boh }));
-
       if (!skipBOH && !boh.suitable) showToast(`⚠ ${stock.sym}: ${boh.reason}`, "error");
       else if (!skipBOH)                showToast(`✅ ${stock.sym} loaded (BOH pass)`, "success");
-      else                              showToast(`✅ ${stock.sym} loaded (BOH skipped)`, "success");
-
+      else                              showToast(`✅ ${stock.sym} loaded`, "success");
       const filtered = filterRowsByDate(rawRows, dateFrom, dateTo);
       const res = calcWeekly(filtered, triggerSource, totalCapital);
-
       setStocks(p => {
         const name = "NSE:"+stock.sym;
         const idx = p.findIndex(x => x.name === name);
@@ -606,14 +539,11 @@ function App() {
       return false;
     }
   }
-  async function pickFromList(stock) {
-    const ok = await addStockAuto(stock);
-    if (ok) setListOpen(false);
-  }
+  async function pickFromList(stock) { const ok = await addStockAuto(stock); if (ok) setListOpen(false); }
 
   async function autoLoadAll() {
     const list = stockList;
-    if (!list.length) { showToast("Sheet खाली है — पहले reload करें", "error"); return; }
+    if (!list.length) { showToast("Sheet खाली है", "error"); return; }
     setAutoProgress({ done:0, total:list.length, current:"" });
     const allData = [];
     for (let i=0; i<list.length; i++) {
@@ -623,13 +553,12 @@ function App() {
         const rawRows = await fetchYahooOHLC(st.sym, range);
         const boh = checkBOH(rawRows);
         allData.push({ sym:st.sym, rawRows, boh });
-      } catch (e) { /* skip */ }
+      } catch (e) {}
       await new Promise(r => setTimeout(r, 120));
     }
     const newCache = {};
     allData.forEach(d => { newCache[d.sym] = d.boh; });
     setBohCache(prev => ({ ...prev, ...newCache }));
-
     const suitable = allData.filter(d => d.boh.suitable);
     const newStocks = suitable.map(d => ({
       name: "NSE:"+d.sym,
@@ -646,7 +575,7 @@ function App() {
       return merged;
     });
     setAutoProgress(null);
-    showToast(`🚀 ${suitable.length}/${allData.length} BOH-suitable stocks loaded`, "success");
+    showToast(`🚀 ${suitable.length}/${allData.length} BOH-suitable loaded`, "success");
     setListOpen(false);
     setActive(0);
   }
@@ -658,7 +587,7 @@ function App() {
     const boh = checkBOH(parsed.rows);
     const filtered = filterRowsByDate(parsed.rows, dateFrom, dateTo);
     const res = calcWeekly(filtered, triggerSource, totalCapital);
-    const name = lbl?.trim() || parsed.stockName || `Stock ${stocks.length+1}`;
+    const name = lbl?.trim() || `Stock ${stocks.length+1}`;
     setStocks(p => [...p, { name, rawRows:parsed.rows, ...res, boh }]);
     setActive(stocks.length);
     return true;
@@ -677,7 +606,7 @@ function App() {
     const lines = [];
     lines.push("# Darvas Box Weekly Trigger Export");
     lines.push(`# Generated: ${new Date().toLocaleString("en-IN")}`);
-    lines.push(`# Source: ${sheetInfo.source === "sheet" ? "Google Sheet — "+SHEET_NAME : "Fallback list"}`);
+    lines.push(`# Source: ${sheetInfo.source === "sheet" ? "Apps Script" : "Fallback"}`);
     lines.push(`# Capital: ₹${totalCapital} (per part ₹${totalCapital/PARTS})`);
     lines.push("");
     lines.push("Stock,Entry Date,Exit Date,Buy Price,Exit Price,Qty,Parts,Held Days,P&L,Return %");
@@ -689,7 +618,6 @@ function App() {
     lines.push(""); lines.push("SUMMARY");
     lines.push(`Total Stocks,${stocks.length}`); lines.push(`Total Trades,${gT}`); lines.push(`Wins,${gW}`);
     lines.push(`Win Rate,${gT?((gW/gT)*100).toFixed(2):0}%`); lines.push(`Total P&L,${gP.toFixed(2)}`);
-
     const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `trades_${fmtDISO(new Date())}.csv`;
@@ -712,7 +640,6 @@ function App() {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif", background:C.bg, color:C.text, minHeight:"100vh", fontSize:14}}>
-      {/* Header */}
       <div style={{background:C.card, padding:"10px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap"}}>
         <div style={{flex:1, minWidth:160}}>
           <span style={{fontWeight:700, fontSize:15}}>📈 Darvas Box Backtest</span>
@@ -722,9 +649,7 @@ function App() {
             color: sheetInfo.source==="sheet" ? C.buy : "#f87171",
             border: `1px solid ${sheetInfo.source==="sheet" ? "#166534" : "#7f1d1d"}`
           }}>
-            {sheetInfo.loading ? "⟳ Loading sheet..." :
-             sheetInfo.source==="sheet" ? `✓ Sheet: ${SHEET_NAME} (${stockList.length})` :
-             `⚠ Fallback (${stockList.length})`}
+            {sheetInfo.loading ? "⟳ Loading..." : sheetInfo.source==="sheet" ? `✓ Sheet (${stockList.length})` : `⚠ Fallback (${stockList.length})`}
           </span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:5,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px"}}>
@@ -736,45 +661,44 @@ function App() {
           <span style={{fontSize:10,color:C.gtt}}>÷6 = ₹{inr(totalCapital/PARTS)}</span>
         </div>
         <select value={triggerSource} onChange={e=>changeTriggerSource(e.target.value)}
-          style={{background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none"}}>
+          style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",outline:"none"}}>
           {TRIGGER_SOURCES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
         <select value={range} onChange={e=>setRange(e.target.value)}
-          style={{background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:12, cursor:"pointer", outline:"none"}}>
+          style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",outline:"none"}}>
           <option value="6mo">6M</option><option value="1y">1Y</option><option value="2y">2Y</option><option value="5y">5Y</option>
         </select>
         <button onClick={()=>setListOpen(true)}
-          style={{background:"none", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer"}}>
+          style={{background:"none",color:"#93c5fd",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
           📋 Stocks ({stockList.length})
         </button>
         <button onClick={()=>setModal(true)}
-          style={{background:C.accent, color:"#fff", border:"none", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer"}}>
+          style={{background:C.accent,color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
           + CSV
         </button>
       </div>
 
       {sheetInfo.error && (
-        <div style={{background:"#7f1d1d", color:"#fecaca", padding:"8px 16px", fontSize:12, borderBottom:`1px solid #991b1b`}}>
-          ⚠ Sheet fetch fail: <b>{sheetInfo.error}</b> — Fallback list use हो रही है। Sheet को <b>"Anyone with the link → Viewer"</b> पर सेट करें, फिर Reload दबाएँ।
+        <div style={{background:"#7f1d1d",color:"#fecaca",padding:"8px 16px",fontSize:12,borderBottom:`1px solid #991b1b`}}>
+          ⚠ Sheet fetch fail: <b>{sheetInfo.error}</b> — Fallback list use हो रही है।
         </div>
       )}
 
-      {/* Date row */}
-      <div style={{background:"#0a1628", padding:"8px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap"}}>
-        <span style={{fontSize:11, color:C.muted, fontWeight:600}}>📅 Date:</span>
+      <div style={{background:"#0a1628",padding:"8px 14px",display:"flex",alignItems:"center",gap:8,borderBottom:`1px solid ${C.border}`,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:C.muted,fontWeight:600}}>📅</span>
         <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 8px",fontSize:12,outline:"none"}}/>
-        <span style={{color:C.muted, fontSize:12}}>→</span>
+        <span style={{color:C.muted,fontSize:12}}>→</span>
         <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{background:C.bg,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 8px",fontSize:12,outline:"none"}}/>
         <button onClick={applyDateRange} style={{background:C.accent,color:"#fff",border:"none",borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Apply</button>
-        {(dateFrom||dateTo) && <button onClick={resetDateRange} style={{background:"none",color:C.muted,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>✕ Reset</button>}
+        {(dateFrom||dateTo) && <button onClick={resetDateRange} style={{background:"none",color:C.muted,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>✕</button>}
         <div style={{flex:1}}/>
         <button onClick={loadSheet} disabled={sheetInfo.loading}
-          style={{background:"#1e3a5f", color:"#93c5fd", border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 12px", fontSize:12, fontWeight:600, cursor: sheetInfo.loading?"wait":"pointer"}}>
+          style={{background:"#1e3a5f",color:"#93c5fd",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:600,cursor:sheetInfo.loading?"wait":"pointer"}}>
           {sheetInfo.loading ? "⟳" : "🔄 Sheet"}
         </button>
         {stocks.length > 0 && (
           <button onClick={exportTradesCSV}
-            style={{background:"linear-gradient(135deg,#16a34a,#22c55e)", color:"#fff", border:"none", borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer"}}>
+            style={{background:"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",border:"none",borderRadius:8,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
             📥 Export
           </button>
         )}
@@ -782,25 +706,18 @@ function App() {
 
       {autoProgress && (
         <div style={{background:"#1e3352",padding:"8px 16px",fontSize:12,color:"#93c5fd",borderBottom:`1px solid ${C.border}`}}>
-          ⏳ Fetching {autoProgress.done}/{autoProgress.total} — {autoProgress.current}
+          ⏳ {autoProgress.done}/{autoProgress.total} — {autoProgress.current}
           <div style={{background:"#0d1a2a",height:4,borderRadius:2,marginTop:6,overflow:"hidden"}}>
             <div style={{background:C.accent,height:"100%",width:`${(autoProgress.done/autoProgress.total)*100}%`,transition:"width 0.3s"}}/>
           </div>
         </div>
       )}
 
-      {/* Tabs */}
       {stocks.length>0 && (
-        <div style={{display:"flex", overflowX:"auto", background:C.card, borderBottom:`1px solid ${C.border}`, padding:"0 8px"}}>
+        <div style={{display:"flex",overflowX:"auto",background:C.card,borderBottom:`1px solid ${C.border}`,padding:"0 8px"}}>
           {stocks.map((st,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
-              <button onClick={()=>setActive(i)} style={{
-                background:"none",border:"none",
-                borderBottom: active===i ? `2px solid ${C.accent}` : "2px solid transparent",
-                color: active===i ? "#93c5fd" : C.muted,
-                padding:"9px 10px",fontSize:12,fontWeight: active===i ? 700 : 400,
-                cursor:"pointer",whiteSpace:"nowrap"
-              }}>
+              <button onClick={()=>setActive(i)} style={{background:"none",border:"none",borderBottom: active===i ? `2px solid ${C.accent}` : "2px solid transparent",color: active===i ? "#93c5fd" : C.muted,padding:"9px 10px",fontSize:12,fontWeight: active===i ? 700 : 400,cursor:"pointer",whiteSpace:"nowrap"}}>
                 {st.name.replace("NSE:","")}
                 {st.boh?.suitable && <span style={{color:C.buy,marginLeft:4,fontSize:9}}>●</span>}
               </button>
@@ -815,7 +732,6 @@ function App() {
         </div>
       )}
 
-      {/* Landing */}
       {!s && !autoProgress && (
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,padding:48,minHeight:"55vh",textAlign:"center"}}>
           <div style={{fontSize:52}}>📈</div>
@@ -823,7 +739,7 @@ function App() {
             <div style={{fontWeight:700,fontSize:20,marginBottom:6}}>Darvas Box Weekly Trigger Backtest</div>
             <div style={{color:C.muted,fontSize:13}}>
               {sheetInfo.loading ? "Sheet load हो रही है..." :
-               sheetInfo.source==="sheet" ? `✓ "${SHEET_NAME}" से ${stockList.length} stocks मिले` :
+               sheetInfo.source==="sheet" ? `✓ Apps Script से ${stockList.length} stocks मिले` :
                `⚠ Fallback list (${stockList.length} stocks)`}
             </div>
           </div>
@@ -840,34 +756,28 @@ function App() {
         </div>
       )}
 
-      {/* Stock view */}
       {s && (
         <div>
           <div style={{display:"flex",gap:10,padding:"14px 16px",overflowX:"auto"}}>
             {[
-              {lbl:"Days",       val:s.rows.length,   clr:C.dim},
-              {lbl:"Trades",     val:s.trades.length, clr:C.buy},
-              {lbl:"Win Rate",   val:s.trades.length ? `${Math.round(wins/s.trades.length*100)}%` : "—", clr:"#93c5fd"},
-              {lbl:"P&L",        val:`₹${inr(totalPnL)}`, clr: totalPnL>=0 ? C.buy : "#f87171"},
-              {lbl:"Parts",      val: s.openPosition ? `${s.openPosition.partsUsed}/${PARTS}` : "0", clr:C.gtt},
-              {lbl:"Close",      val:`₹${fmtN(last?.close)}`, clr:"#93c5fd"},
+              {lbl:"Days",   val:s.rows.length,   clr:C.dim},
+              {lbl:"Trades", val:s.trades.length, clr:C.buy},
+              {lbl:"Win %",  val:s.trades.length ? `${Math.round(wins/s.trades.length*100)}%` : "—", clr:"#93c5fd"},
+              {lbl:"P&L",    val:`₹${inr(totalPnL)}`, clr: totalPnL>=0 ? C.buy : "#f87171"},
+              {lbl:"Parts",  val: s.openPosition ? `${s.openPosition.partsUsed}/${PARTS}` : "0", clr:C.gtt},
+              {lbl:"Close",  val:`₹${fmtN(last?.close)}`, clr:"#93c5fd"},
             ].map((c,i)=>(
-              <div key={i} style={{...card(), padding:"10px 16px", minWidth:95, textAlign:"center", flexShrink:0}}>
+              <div key={i} style={{...card(),padding:"10px 16px",minWidth:95,textAlign:"center",flexShrink:0}}>
                 <div style={{fontSize:16,fontWeight:700,color:c.clr,fontFamily:"monospace"}}>{c.val}</div>
                 <div style={{fontSize:10,color:C.muted,marginTop:2}}>{c.lbl}</div>
               </div>
             ))}
           </div>
-          <div style={{margin:"0 16px 12px", ...card(), padding:"10px 16px", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap"}}>
+          <div style={{margin:"0 16px 12px",...card(),padding:"10px 16px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontSize:11,color:C.muted}}>{fmtD(last?.date)}:</span>
             <span style={{background:"#0a1628",color:"#fbbf24",border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>🎯 {sourceLabel}</span>
             {s.boh && (
-              <span style={{
-                background: s.boh.suitable ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",
-                color: s.boh.suitable ? C.buy : "#f87171",
-                border:`1px solid ${s.boh.suitable?"#166534":"#7f1d1d"}`,
-                borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700
-              }}>
+              <span style={{background: s.boh.suitable ? "rgba(74,222,128,.12)" : "rgba(248,113,113,.12)",color: s.boh.suitable ? C.buy : "#f87171",border:`1px solid ${s.boh.suitable?"#166534":"#7f1d1d"}`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700}}>
                 {s.boh.suitable ? "✅ BOH" : "⛔ "+s.boh.reason}
               </span>
             )}
@@ -877,26 +787,18 @@ function App() {
                 <span style={{color: s.openPosition.unrealized>=0 ? C.buy : "#f87171",marginLeft:8}}>({s.openPosition.unrealized>=0?"+":""}₹{inr(s.openPosition.unrealized)})</span>
               </span>
             ) : s.pendingTrigger ? (
-              <span style={{background:"#1c1407",color:C.gtt,border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
-                🔔 Next Trigger @ ₹{fmtN(s.pendingTrigger)}
-              </span>
+              <span style={{background:"#1c1407",color:C.gtt,border:"1px solid #78350f",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>🔔 Next Trigger @ ₹{fmtN(s.pendingTrigger)}</span>
             ) : <span style={{color:C.muted,fontSize:12}}>⏳ IDLE</span>}
           </div>
-          <div style={{padding:"0 16px 12px", display:"flex", gap:6, overflowX:"auto"}}>
+          <div style={{padding:"0 16px 12px",display:"flex",gap:6,overflowX:"auto"}}>
             {views.map(v=>(
-              <button key={v.key} onClick={()=>setView(v.key)} style={{
-                background: view===v.key ? C.accent : "none",
-                color: view===v.key ? "#fff" : C.muted,
-                border:`1px solid ${view===v.key ? C.accent : C.border}`,
-                borderRadius:8,padding:"6px 12px",fontSize:12,
-                cursor:"pointer",fontWeight: view===v.key?700:400,whiteSpace:"nowrap"
-              }}>{v.lbl}</button>
+              <button key={v.key} onClick={()=>setView(v.key)} style={{background: view===v.key ? C.accent : "none",color: view===v.key ? "#fff" : C.muted,border:`1px solid ${view===v.key ? C.accent : C.border}`,borderRadius:8,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight: view===v.key?700:400,whiteSpace:"nowrap"}}>{v.lbl}</button>
             ))}
           </div>
 
           {view==="chart" && (
             <div style={{padding:"0 10px 20px"}}>
-              <div style={{...card(), padding:"10px 0"}}>
+              <div style={{...card(),padding:"10px 0"}}>
                 <div style={{paddingLeft:14,fontSize:12,color:C.muted,marginBottom:6}}>{s.name} — Close + {sourceLabel} Trigger</div>
                 <MiniChart rows={s.rows} sourceLabel={sourceLabel}/>
               </div>
@@ -910,14 +812,11 @@ function App() {
                 <div key={i} style={{background:"#04130b",border:"1px solid #166534",borderRadius:10,padding:"10px 14px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,flexWrap:"wrap",gap:6}}>
                     <span style={{color:"#86efac",fontWeight:700,fontSize:13}}>#{s.trades.length-i} — {fmtD(t.entryDate)} → {fmtD(t.exitDate)}</span>
-                    <span style={{background:"#052e16",color:C.buy,border:"1px solid #166534",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>
-                      🎯 +{t.pct.toFixed(2)}% · ₹{inr(t.pnl)}
-                    </span>
+                    <span style={{background:"#052e16",color:C.buy,border:"1px solid #166534",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>🎯 +{t.pct.toFixed(2)}% · ₹{inr(t.pnl)}</span>
                   </div>
                   <div style={{display:"flex",gap:20,fontSize:12,color:"#94a3b8",flexWrap:"wrap"}}>
                     <span>Buy ₹{fmtN(t.entry)}</span><span>Exit ₹{fmtN(t.exit)}</span>
-                    <span>Qty {t.shares}</span><span>Parts {t.partsUsed}/{PARTS}</span>
-                    <span>{t.days}d</span>
+                    <span>Qty {t.shares}</span><span>Parts {t.partsUsed}/{PARTS}</span><span>{t.days}d</span>
                   </div>
                 </div>
               ))}
@@ -928,8 +827,7 @@ function App() {
                     <span style={{background:"#1c1407",color:C.gtt,border:"1px solid #78350f",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>⏳ {s.openPosition.partsUsed}/6</span>
                   </div>
                   <div style={{display:"flex",gap:20,fontSize:12,color:"#94a3b8",flexWrap:"wrap"}}>
-                    <span>Avg ₹{fmtN(s.openPosition.avg)}</span>
-                    <span>T ₹{fmtN(s.openPosition.target)}</span>
+                    <span>Avg ₹{fmtN(s.openPosition.avg)}</span><span>T ₹{fmtN(s.openPosition.target)}</span>
                     <span>Qty {s.openPosition.shares}</span>
                     <span>Unreal <b style={{color: s.openPosition.unrealized>=0 ? C.buy : "#f87171"}}>₹{inr(s.openPosition.unrealized)}</b></span>
                   </div>
@@ -1029,7 +927,7 @@ function App() {
           onClick={e => e.currentTarget===e.target && (setModal(false), setErr(""))}>
           <div style={{background:"#0d1a2a",borderTop:`1px solid ${C.border}`,borderRadius:"18px 18px 0 0",padding:20,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{fontWeight:700,fontSize:16,marginBottom:18}}>📥 CSV Upload</div>
-            <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Stock name (जैसे: NSE:RELIANCE)"
+            <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Stock name (जैसे: RELIANCE)"
               style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,boxSizing:"border-box",marginBottom:14,outline:"none"}}/>
             <input type="file" accept=".csv,.txt" onChange={onFile}
               style={{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:13,boxSizing:"border-box",marginBottom:10}}/>
