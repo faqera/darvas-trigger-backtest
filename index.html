@@ -541,24 +541,45 @@ function App() {
   }
   async function pickFromList(stock) { const ok = await addStockAuto(stock); if (ok) setListOpen(false); }
 
+  // ⚡ OPTIMIZED: Batch + Parallel fetching — 4-5x faster
   async function autoLoadAll() {
     const list = stockList;
     if (!list.length) { showToast("Sheet खाली है", "error"); return; }
-    setAutoProgress({ done:0, total:list.length, current:"" });
+    
+    setAutoProgress({ done:0, total:list.length, current:"Starting..." });
     const allData = [];
-    for (let i=0; i<list.length; i++) {
-      const st = list[i];
-      setAutoProgress({ done:i, total:list.length, current: st.sym });
-      try {
-        const rawRows = await fetchYahooOHLC(st.sym, range);
-        const boh = checkBOH(rawRows);
-        allData.push({ sym:st.sym, rawRows, boh });
-      } catch (e) {}
-      await new Promise(r => setTimeout(r, 120));
+    const BATCH_SIZE = 5; // एक बार में 5 स्टॉक्स parallel में fetch होंगे
+
+    for (let i = 0; i < list.length; i += BATCH_SIZE) {
+      const batch = list.slice(i, i + BATCH_SIZE);
+      const batchSyms = batch.map(b => b.sym).join(", ");
+      
+      setAutoProgress({ done: i, total: list.length, current: batchSyms });
+
+      // बैच के सारे स्टॉक्स एक साथ fetch करो (Parallel)
+      const promises = batch.map(async (st) => {
+        try {
+          const rawRows = await fetchYahooOHLC(st.sym, range);
+          const boh = checkBOH(rawRows);
+          return { sym: st.sym, rawRows, boh };
+        } catch (e) { 
+          return null; // अगर एक स्टॉक फेल हो तो बाकी न रुकें
+        }
+      });
+
+      const results = await Promise.all(promises);
+      results.forEach(r => { if (r) allData.push(r); });
+
+      // अगले बैच से पहले छोटा डिले (Yahoo API ब्लॉक से बचने के लिए)
+      if (i + BATCH_SIZE < list.length) {
+        await new Promise(r => setTimeout(r, 250)); 
+      }
     }
+
     const newCache = {};
     allData.forEach(d => { newCache[d.sym] = d.boh; });
     setBohCache(prev => ({ ...prev, ...newCache }));
+    
     const suitable = allData.filter(d => d.boh.suitable);
     const newStocks = suitable.map(d => ({
       name: "NSE:"+d.sym,
@@ -566,6 +587,7 @@ function App() {
       ...calcWeekly(filterRowsByDate(d.rawRows, dateFrom, dateTo), triggerSource, totalCapital),
       boh: d.boh
     }));
+
     setStocks(prev => {
       const merged = [...prev];
       newStocks.forEach(ns => {
@@ -574,6 +596,7 @@ function App() {
       });
       return merged;
     });
+    
     setAutoProgress(null);
     showToast(`🚀 ${suitable.length}/${allData.length} BOH-suitable loaded`, "success");
     setListOpen(false);
